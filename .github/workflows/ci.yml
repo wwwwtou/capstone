@@ -1,4 +1,5 @@
 name: CI/CD Pipeline
+run-name: CI/CD Pipeline - ${{ github.ref_name }} @ ${{ github.sha }}
 
 on:
   push:
@@ -11,19 +12,19 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  backend-workflow:
-    name: Backend CI
+  backend-lint-security:
+    name: 1) Backend - Lint & Security
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Step 1/6 - Checkout backend source
         uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: Step 2/6 - Set up Go 1.21
         uses: actions/setup-go@v5
         with:
           go-version: "1.21"
 
-      - name: Cache Go modules
+      - name: Step 3/6 - Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
@@ -33,44 +34,66 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Install golangci-lint
+      - name: Step 4/6 - Install golangci-lint
         run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 
-      - name: Lint
+      - name: Step 5/6 - Run golangci-lint
         working-directory: backend
         run: golangci-lint run ./...
 
-      - name: Security Scan (gosec)
+      - name: Step 6/6 - Run gosec SAST
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@v2.22.2
           cd backend && gosec ./...
 
-      - name: Test
+  backend-test-build:
+    name: 2) Backend - Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Step 1/5 - Checkout backend source
+        uses: actions/checkout@v4
+
+      - name: Step 2/5 - Set up Go 1.21
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Step 3/5 - Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Step 4/5 - Run Go tests with coverage
         working-directory: backend
         run: go test ./... -coverprofile=coverage.out
 
-      - name: Build
+      - name: Step 5/5 - Build backend binary
         working-directory: backend
         run: go build -o rec-service ./cmd/api
 
-  frontend-workflow:
-    name: Frontend CI
+  frontend-build:
+    name: 3) Frontend - Install, Lint & Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Step 1/5 - Checkout frontend source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Step 2/5 - Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      - name: Install Dependencies
+      - name: Step 3/5 - Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Step 4/5 - Run frontend lint
         run: npm run lint
 
-      - name: Build
+      - name: Step 5/5 - Build frontend
         run: npm run build
