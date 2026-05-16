@@ -16,4 +16,4 @@ ENV PORT=3000
 EXPOSE 3000
 
 # Run the production server that serves the built frontend and mock API
-CMD ["sh", "-c", "NODE_ENV=production npm run dev"]
+CMD ["npm", "start"]

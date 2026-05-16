@@ -34,9 +34,10 @@ No AWS account is required.
 1. Sign in to Render.
 2. Create a new **Web Service** from this GitHub repo.
 3. Set the service type to **Docker** so it uses the root `Dockerfile`.
-4. Use the default port Render assigns, or let Render inject `PORT`.
+4. Make sure the start command is the Docker default, or leave it empty so Render uses `Dockerfile`.
 5. Create a deploy hook in Render and copy its URL.
 6. Add the hook URL to GitHub repository secrets as `DEPLOY_HOOK_URL`.
+7. If Render still warns about ports, confirm the service is not created as a Node runtime service by mistake.
 
 ### GitHub Actions flow
 
@@ -57,4 +58,5 @@ npm run dev
 
 - If `DEPLOY_HOOK_URL` is missing, the deploy job fails on purpose so you know CD is not wired yet.
 - This is a real CD trigger, but the deployment target is Render rather than AWS.
+- The app must be deployed as a Docker service; otherwise Render may run a Node preset that listens on localhost and fails the port scan.
 - If you later want AWS again, you can swap the deploy hook job for ECR + ECS or EC2 SSH deploy.
