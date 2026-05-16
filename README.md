@@ -60,3 +60,5 @@ npm run dev
 - This is a real CD trigger, but the deployment target is Render rather than AWS.
 - The app must be deployed as a Docker service; otherwise Render may run a Node preset that listens on localhost and fails the port scan.
 - If you later want AWS again, you can swap the deploy hook job for ECR + ECS or EC2 SSH deploy.
+
+------
