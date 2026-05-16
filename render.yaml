@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: e-commerce-video-recsys-mvp
+    env: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /api/v1/health

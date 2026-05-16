@@ -41,7 +41,7 @@ export default function App() {
           <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <Zap className="text-white w-6 h-6 fill-white" />
           </div>
-          <h1 className="font-bold text-lg tracking-tight italic">TikTok <span className="text-indigo-400">Glocal</span></h1>
+          <h1 className="font-bold text-lg tracking-tight italic">TikTok <span className="text-indigo-400">Global</span></h1>
         </div>
 
         <nav className="space-y-1">
@@ -73,7 +73,7 @@ export default function App() {
               {activeTab === "simulator" && "Endpoint Simulator"}
             </h2>
             <p className="text-slate-500 text-sm font-medium">
-              TikTok Glocal Ecommerce Recommendation Infrastructure
+              TikTok Global Ecommerce Recommendation Infrastructure
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -96,7 +96,7 @@ export default function App() {
               className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 font-bold text-sm"
             >
               <CheckCircle2 className="w-5 h-5" />
-              Authenticated with TikTok Glocal IAM
+              Authenticated with TikTok Global IAM
             </motion.div>
           )}
         </AnimatePresence>
