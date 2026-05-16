@@ -56,5 +56,7 @@ func main() {
 	}
 
 	log.Printf("TikTok Glocal Backend serving on :%s", port)
-	r.Run(":" + port)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatal(err)
+	}
 }
