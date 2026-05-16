@@ -97,3 +97,25 @@ jobs:
 
       - name: Step 5/5 - Build frontend
         run: npm run build
+
+  deploy-render:
+    name: 4) Deploy - Trigger Render
+    needs:
+      - backend-lint-security
+      - backend-test-build
+      - frontend-build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Step 1/2 - Checkout code for traceability
+        uses: actions/checkout@v4
+
+      - name: Step 2/2 - Trigger Render deploy hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "DEPLOY_HOOK_URL secret is not configured."
+            exit 1
+          fi
+          curl -fsSL -X POST "$DEPLOY_HOOK_URL"

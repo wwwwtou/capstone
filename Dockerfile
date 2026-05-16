@@ -15,5 +15,5 @@ RUN npm run build
 ENV PORT=3000
 EXPOSE 3000
 
-# Serve the built app via Vite preview on port 3000
-CMD ["npm", "run", "preview", "--", "--port", "3000"]
+# Run the production server that serves the built frontend and mock API
+CMD ["sh", "-c", "NODE_ENV=production npm run dev"]

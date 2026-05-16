@@ -1,86 +1,121 @@
-# TikTok Glocal Infrastructure as Code (AWS Mockup)
-# This demonstrates the planned cloud deployment architecture for the defense.
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
 
 provider "aws" {
-  region = "ap-southeast-1"
+  region = var.aws_region
 }
 
-# 1. Network: VPC with Public/Private Subnets
-resource "aws_vpc" "recsys_vpc" {
-  cidr_block           = "10.0.0.0-16"
-  enable_dns_hostnames = true
+data "aws_vpc" "default" {
+  default = true
+}
 
-  tags = {
-    Name = "tiktok-recsys-vpc"
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
   }
 }
 
-# 2. Compute: EC2 for Recommendation Engine (Application Server)
-resource "aws_instance" "app_server" {
-  ami           = "ami-0c2af51e273e592c0" # Amazon Linux 2
-  instance_type = "t3.medium"
-  subnet_id     = aws_subnet.private_subnet.id
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
 
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
-
-  tags = {
-    Name = "RecSys-App-Server"
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
   }
 }
 
-# 3. Database: RDS PostgreSQL Instance
-resource "aws_db_instance" "postgres" {
-  allocated_storage    = 20
-  engine               = "postgres"
-  instance_class       = "db.t3.micro"
-  db_name              = "recsys"
-  username             = "admin"
-  password             = var.db_password
-  parameter_group_name = "default.postgres15"
-  
-  # Security: Isolating DB in Private Subnet
-  db_subnet_group_name = aws_db_subnet_group.default.name
-  vpc_security_group_ids = [aws_security_group.db_sg.id]
-  
-  skip_final_snapshot  = true
+locals {
+  app_name = "e-commerce-video-recsys-mvp"
 }
 
-# 4. Security Groups: Implementation of Least Privilege
-resource "aws_security_group" "app_sg" {
-  name        = "app-server-sg"
-  vpc_id      = aws_vpc.recsys_vpc.id
+resource "aws_security_group" "app" {
+  name_prefix = "${local.app_name}-sg-"
+  description = "Minimal security group for the EC2 deployment"
+  vpc_id      = data.aws_vpc.default.id
 
-  # Inbound from Load Balancer only
   ingress {
+    description = "Frontend"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Backend API"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["10.0.1.0-24"] # Public Subnet Range
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0-0"]
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.app_name}-sg"
   }
 }
 
-resource "aws_security_group" "db_sg" {
-  name   = "rds-sg"
-  vpc_id = aws_vpc.recsys_vpc.id
+resource "aws_instance" "app" {
+  ami                         = data.aws_ami.amazon_linux_2.id
+  instance_type               = var.instance_type
+  subnet_id                   = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids      = [aws_security_group.app.id]
+  associate_public_ip_address = true
+  user_data_replace_on_change = true
 
-  # Inbound strictly from App Server only (Zero Trust Principle)
-  ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app_sg.id]
+  user_data = templatefile("${path.module}/user-data.sh.tftpl", {
+    repo_url    = var.repo_url
+    repo_branch = var.repo_branch
+  })
+
+  tags = {
+    Name = "${local.app_name}-ec2"
   }
 }
 
-variable "db_password" {
-  description = "RDS Master Password"
+variable "aws_region" {
+  description = "AWS region for the deployment"
   type        = string
-  sensitive   = true
+  default     = "ap-southeast-1"
+}
+
+variable "instance_type" {
+  description = "EC2 instance type"
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "repo_url" {
+  description = "GitHub repository URL to clone on the EC2 instance"
+  type        = string
+}
+
+variable "repo_branch" {
+  description = "Branch to deploy"
+  type        = string
+  default     = "main"
+}
+
+output "ec2_public_ip" {
+  value = aws_instance.app.public_ip
+}
+
+output "app_url" {
+  value = "http://${aws_instance.app.public_ip}:3000"
 }
