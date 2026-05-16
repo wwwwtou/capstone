@@ -1,73 +1,76 @@
-name: TikTok Glocal CI/CD Pipeline
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
-
 jobs:
-  # Backend Pipeline: Shift-Left Security & Testing
   backend-workflow:
+    name: Backend CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
-          cache-dependency-path: backend/go.sum
+          go-version: "1.21"
 
-      # 1. Static Analysis & Linting
-      - name: Run GolangCI-Lint
-        run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-          cd backend && golangci-lint run ./...
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      # 2. SAST: Security Scan (Critical Defense Requirement)
-      - name: Run Gosec Security Scanner
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
+      - name: Lint
+        working-directory: backend
+        run: golangci-lint run ./...
+
+      - name: Security Scan (gosec)
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.22.2
           cd backend && gosec ./...
 
-      # 3. Unit Testing & Coverage
-      - name: Run Go Unit Tests
-        run: |
-          cd backend
-          go test -v -coverprofile=coverage.txt ./...
-          go tool cover -func=coverage.txt
+      - name: Test
+        working-directory: backend
+        run: go test ./... -coverprofile=coverage.out
 
-      - name: Build Go Binary
-        run: |
-          cd backend
-          go build -o rec-service ./cmd/api
+      - name: Build
+        working-directory: backend
+        run: go build -o rec-service ./cmd/api
 
-      # 4. Containerization
-      - name: Build & Push Docker Image
-        run: |
-          docker build -t tiktok-recsys/backend:latest ./backend
-
-  # Frontend Pipeline: Formatting & Build
   frontend-workflow:
+    name: Frontend CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
-      - name: Install & Lint
-        run: |
-          npm ci
-          npm run lint
+      - name: Install Dependencies
+        run: npm ci
 
-      - name: Build Dashboard
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
         run: npm run build
