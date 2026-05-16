@@ -1,0 +1,6 @@
+{
+  "name": "TikTok Glocal Ecommerce RecSys",
+  "description": "Enterprise-grade Proxy MVP for global e-commerce video recommendations. Built with Go (Clean Arch), React, and Docker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

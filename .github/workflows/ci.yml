@@ -1,0 +1,70 @@
+name: TikTok Glocal CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # Backend Pipeline: Shift-Left Security & Testing
+  backend-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # 1. Static Analysis & Linting
+      - name: Run GolangCI-Lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: backend
+
+      # 2. SAST: Security Scan (Critical Defense Requirement)
+      - name: Run Gosec Security Scanner
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          cd backend && gosec ./...
+
+      # 3. Unit Testing & Coverage
+      - name: Run Go Unit Tests
+        run: |
+          cd backend
+          go test -v -coverprofile=coverage.txt ./...
+          go tool cover -func=coverage.txt
+
+      - name: Build Go Binary
+        run: |
+          cd backend
+          go build -o rec-service ./cmd/api
+
+      # 4. Containerization
+      - name: Build & Push Docker Image
+        run: |
+          docker build -t tiktok-recsys/backend:latest ./backend
+
+  # Frontend Pipeline: Formatting & Build
+  frontend-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install & Lint
+        run: |
+          npm ci
+          npm run lint
+
+      - name: Build Dashboard
+        run: npm run build
