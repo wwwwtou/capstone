@@ -1,0 +1,64 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - ./postgres:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  gateway:
+    build:
+      context: ./services/gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - user
+      - content
+      - recommendation
+
+  user:
+    build:
+      context: ./services/user
+    environment:
+      - POSTGRES_URL=postgres://postgres:postgres@postgres:5432/user_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8081:8081"
+
+  content:
+    build:
+      context: ./services/content
+    environment:
+      - POSTGRES_URL=postgres://postgres:postgres@postgres:5432/content_db?sslmode=disable
+    depends_on:
+      - postgres
+    ports:
+      - "8082:8082"
+
+  recommendation:
+    build:
+      context: ./services/recommendation
+    environment:
+      - POSTGRES_URL=postgres://postgres:postgres@postgres:5432/rec_db?sslmode=disable
+      - USER_SERVICE_URL=http://user:8081
+      - CONTENT_SERVICE_URL=http://content:8082
+    depends_on:
+      - postgres
+      - user
+      - content
+    ports:
+      - "8083:8083"
+
+networks: {}
