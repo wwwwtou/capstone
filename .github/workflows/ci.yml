@@ -1,5 +1,5 @@
-name: CI/CD Pipeline
-run-name: CI/CD Pipeline - ${{ github.ref_name }} @ ${{ github.sha }}
+name: CI/CD - Lint, Test Report, Build and Deploy
+run-name: CI/CD - Lint, Test Report, Build and Deploy - ${{ github.ref_name }} @ ${{ github.sha }}
 
 on:
   push:
@@ -74,7 +74,7 @@ jobs:
           fi
 
   webservice-build:
-    name: 2) Single Webservice - Build Checks
+    name: 2) Lint and Build Checks
     runs-on: ubuntu-latest
     steps:
       - name: Step 1/5 - Checkout source
@@ -98,7 +98,7 @@ jobs:
         run: docker build -t e-commerce-video-recsys-mvp:ci .
 
   deploy-render:
-    name: 3) CD - Deploy to Render
+    name: 3) Deploy to Render
     needs:
       - unit-test-report
       - webservice-build
