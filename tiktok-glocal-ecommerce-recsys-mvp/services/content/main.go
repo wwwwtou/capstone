@@ -27,9 +27,17 @@ func main() {
 	db.SetConnMaxLifetime(time.Minute * 3)
 
 	r := mux.NewRouter()
+	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok","service":"content"}`))
+	}).Methods("GET")
 	r.HandleFunc("/internal/content/candidates", handleCandidates).Methods("GET")
 
-	addr := ":8082"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8082"
+	}
+	addr := ":" + port
 	log.Println("Content service listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, r))
 }

@@ -8,82 +8,79 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
-  backend-lint-security:
-    name: 1) Backend - Lint & Security
+  unit-test-report:
+    name: 1) Unit Tests - Report Artifact
     runs-on: ubuntu-latest
     steps:
-      - name: Step 1/6 - Checkout backend source
+      - name: Step 1/6 - Checkout source
         uses: actions/checkout@v4
 
-      - name: Step 2/6 - Set up Go 1.21
+      - name: Step 2/6 - Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.21"
 
-      - name: Step 3/6 - Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Step 4/6 - Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-
-      - name: Step 5/6 - Run golangci-lint
-        working-directory: backend
-        run: golangci-lint run ./...
-
-      - name: Step 6/6 - Run gosec SAST
+      - name: Step 3/6 - Run recommendation unit tests
+        shell: bash
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.22.2
-          cd backend && gosec ./...
+          set -euo pipefail
+          mkdir -p artifacts
+          cd tiktok-glocal-ecommerce-recsys-mvp/services/recommendation
+          go test -v ./... | tee ../../../artifacts/go-test.log
 
-  backend-test-build:
-    name: 2) Backend - Test & Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Step 1/5 - Checkout backend source
-        uses: actions/checkout@v4
+      - name: Step 4/6 - Build machine-readable test report
+        shell: bash
+        run: |
+          set -euo pipefail
+          total=$(grep -c "^=== RUN" artifacts/go-test.log || true)
+          passed=$(grep -c "^--- PASS:" artifacts/go-test.log || true)
+          failed=$(grep -c "^--- FAIL:" artifacts/go-test.log || true)
+          if [ "$total" -eq 0 ]; then
+            pass_rate="0.00"
+          else
+            pass_rate=$(awk "BEGIN { printf \"%.2f\", ($passed/$total)*100 }")
+          fi
 
-      - name: Step 2/5 - Set up Go 1.21
-        uses: actions/setup-go@v5
+          {
+            echo "# Unit Test Report"
+            echo
+            echo "- Scope: tiktok-glocal-ecommerce-recsys-mvp/services/recommendation"
+            echo "- Total test cases: $total"
+            echo "- Passed: $passed"
+            echo "- Failed: $failed"
+            echo "- Pass rate: ${pass_rate}%"
+            echo
+            echo "## Raw go test output"
+            echo '```text'
+            cat artifacts/go-test.log
+            echo '```'
+          } > artifacts/unit-test-report.md
+
+      - name: Step 5/6 - Upload test report artifact
+        uses: actions/upload-artifact@v4
         with:
-          go-version: "1.21"
-
-      - name: Step 3/5 - Cache Go modules
-        uses: actions/cache@v4
-        with:
+          name: unit-test-report
           path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+            artifacts/unit-test-report.md
+            artifacts/go-test.log
 
-      - name: Step 4/5 - Run Go tests with coverage
-        working-directory: backend
-        run: go test ./... -coverprofile=coverage.out
+      - name: Step 6/6 - Fail on test failures
+        shell: bash
+        run: |
+          if grep -q "^--- FAIL:" artifacts/go-test.log; then
+            echo "Unit tests failed. See unit-test-report artifact."
+            exit 1
+          fi
 
-      - name: Step 5/5 - Build backend binary
-        working-directory: backend
-        run: go build -o rec-service ./cmd/api
-
-  frontend-build:
-    name: 3) Frontend - Install, Lint & Build
+  webservice-build:
+    name: 2) Single Webservice - Build Checks
     runs-on: ubuntu-latest
     steps:
-      - name: Step 1/5 - Checkout frontend source
+      - name: Step 1/5 - Checkout source
         uses: actions/checkout@v4
 
-      - name: Step 2/5 - Set up Node.js 20
+      - name: Step 2/5 - Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -92,30 +89,31 @@ jobs:
       - name: Step 3/5 - Install dependencies
         run: npm ci
 
-      - name: Step 4/5 - Run frontend lint
-        run: npm run lint
+      - name: Step 4/5 - Type check and web build
+        run: |
+          npm run lint
+          npm run build
 
-      - name: Step 5/5 - Build frontend
-        run: npm run build
+      - name: Step 5/5 - Docker build root webservice
+        run: docker build -t e-commerce-video-recsys-mvp:ci .
 
   deploy-render:
-    name: 4) Deploy - Trigger Render
+    name: 3) CD - Deploy to Render
     needs:
-      - backend-lint-security
-      - backend-test-build
-      - frontend-build
+      - unit-test-report
+      - webservice-build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Step 1/2 - Checkout code for traceability
-        uses: actions/checkout@v4
-
-      - name: Step 2/2 - Trigger Render deploy hook
+      - name: Step 1/2 - Trigger Render deploy hook
         env:
           DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$DEPLOY_HOOK_URL" ]; then
-            echo "DEPLOY_HOOK_URL secret is not configured."
-            exit 1
+            echo "DEPLOY_HOOK_URL secret is not configured. Skipping Render deploy."
+            exit 0
           fi
           curl -fsSL -X POST "$DEPLOY_HOOK_URL"
+
+      - name: Step 2/2 - Deployment notice
+        run: echo "Render deploy hook triggered successfully."

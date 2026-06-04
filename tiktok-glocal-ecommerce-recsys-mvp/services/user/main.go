@@ -29,17 +29,34 @@ func main() {
 	}
 	db.SetConnMaxLifetime(time.Minute * 3)
 
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "redis:6379"
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL != "" {
+		opt, err := redis.ParseURL(redisURL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		rdb = redis.NewClient(opt)
+	} else {
+		redisAddr := os.Getenv("REDIS_ADDR")
+		if redisAddr == "" {
+			redisAddr = "localhost:6379"
+		}
+		rdb = redis.NewClient(&redis.Options{Addr: redisAddr})
 	}
-	rdb = redis.NewClient(&redis.Options{Addr: redisAddr})
 
 	r := mux.NewRouter()
+	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok","service":"user"}`))
+	}).Methods("GET")
 	r.HandleFunc("/api/v1/users/{id}/interactions", handleInteraction).Methods("POST")
 	r.HandleFunc("/internal/users/{id}/profile", handleProfile).Methods("GET")
 
-	addr := ":8081"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8081"
+	}
+	addr := ":" + port
 	log.Println("User service listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, r))
 }

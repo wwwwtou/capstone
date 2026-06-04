@@ -29,10 +29,18 @@ func main() {
 	cfgStore = &ConfigStore{DB: db}
 
 	r := mux.NewRouter()
+	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok","service":"recommendation"}`))
+	}).Methods("GET")
 	r.HandleFunc("/api/v1/recommendations", handleRecommend).Methods("GET")
 	r.HandleFunc("/api/v1/configs", handleConfig).Methods("PUT")
 
-	addr := ":8083"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8083"
+	}
+	addr := ":" + port
 	log.Println("Recommendation service listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, r))
 }
