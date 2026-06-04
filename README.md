@@ -26,3 +26,6 @@ npm run dev
 ## Project Goal
 
 The repository is designed for architecture demonstration, CI/CD practice, and deployment experiments.
+
+
+
