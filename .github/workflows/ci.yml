@@ -33,9 +33,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          total=$(grep -c "^=== RUN" artifacts/go-test.log || true)
-          passed=$(grep -c "^--- PASS:" artifacts/go-test.log || true)
-          failed=$(grep -c "^--- FAIL:" artifacts/go-test.log || true)
+          total=$(grep -c '^=== RUN   Test' artifacts/go-test.log || true)
+          passed=$(grep -c -- '--- PASS: Test' artifacts/go-test.log || true)
+          failed=$(grep -c -- '--- FAIL: Test' artifacts/go-test.log || true)
           if [ "$total" -eq 0 ]; then
             pass_rate="0.00"
           else
@@ -50,6 +50,7 @@ jobs:
             echo "- Passed: $passed"
             echo "- Failed: $failed"
             echo "- Pass rate: ${pass_rate}%"
+            echo "- 测试通过率统计口径：包含子测试"
             echo
             echo "## Raw go test output"
             echo '```text'
