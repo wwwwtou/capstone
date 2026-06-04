@@ -9,8 +9,104 @@ on:
   workflow_dispatch:
 
 jobs:
+  go-quality-security:
+    name: 1) Go Quality and Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Step 1/4 - Checkout source
+        uses: actions/checkout@v4
+
+      - name: Step 2/4 - Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Step 3/4 - Install analyzers
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Step 4/5 - Run vet (hard gate) on all Go modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t go_mods < <(find tiktok-glocal-ecommerce-recsys-mvp -type f -name 'go.mod' | sort)
+          if [ ${#go_mods[@]} -eq 0 ]; then
+            echo "No Go modules found under tiktok-glocal-ecommerce-recsys-mvp"
+            exit 1
+          fi
+
+          for mod in "${go_mods[@]}"; do
+            dir=$(dirname "$mod")
+            echo "::group::Vet $dir"
+            (
+              cd "$dir"
+              go vet ./...
+            )
+            echo "::endgroup::"
+          done
+
+      - name: Step 5/5 - Run advisory security scans and build report artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/security
+          report="artifacts/security/go-security-summary.md"
+          echo "# Go Security and Quality Report" > "$report"
+          echo >> "$report"
+          echo "- Mode: Advisory (report-only, non-blocking)" >> "$report"
+          echo "- Scope: tiktok-glocal-ecommerce-recsys-mvp/**/go.mod" >> "$report"
+          echo >> "$report"
+
+          mapfile -t go_mods < <(find tiktok-glocal-ecommerce-recsys-mvp -type f -name 'go.mod' | sort)
+          for mod in "${go_mods[@]}"; do
+            dir=$(dirname "$mod")
+            name=$(basename "$dir")
+
+            echo "## Module: $dir" >> "$report"
+
+            (
+              cd "$dir"
+              "$HOME/go/bin/golangci-lint" run ./... > "$GITHUB_WORKSPACE/artifacts/security/${name}-golangci-lint.txt" 2>&1 || true
+              "$HOME/go/bin/gosec" ./... > "$GITHUB_WORKSPACE/artifacts/security/${name}-gosec.txt" 2>&1 || true
+              "$HOME/go/bin/govulncheck" ./... > "$GITHUB_WORKSPACE/artifacts/security/${name}-govulncheck.txt" 2>&1 || true
+            )
+
+            echo "- golangci-lint: artifacts/security/${name}-golangci-lint.txt" >> "$report"
+            echo "- gosec: artifacts/security/${name}-gosec.txt" >> "$report"
+            echo "- govulncheck: artifacts/security/${name}-govulncheck.txt" >> "$report"
+            echo >> "$report"
+          done
+
+      - name: Step 6/6 - Upload security report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-security-report
+          path: artifacts/security/
+
+  frontend-security:
+    name: 2) Frontend Dependency Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Step 1/3 - Checkout source
+        uses: actions/checkout@v4
+
+      - name: Step 2/3 - Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Step 3/3 - Audit npm dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
   unit-test-report:
-    name: 1) Unit Tests - Report Artifact
+    name: 3) Unit Tests - Report Artifact
     runs-on: ubuntu-latest
     steps:
       - name: Step 1/6 - Checkout source
@@ -75,7 +171,7 @@ jobs:
           fi
 
   webservice-build:
-    name: 2) Lint and Build Checks
+    name: 4) Lint and Build Checks
     runs-on: ubuntu-latest
     steps:
       - name: Step 1/5 - Checkout source
@@ -99,8 +195,10 @@ jobs:
         run: docker build -t e-commerce-video-recsys-mvp:ci .
 
   deploy-render:
-    name: 3) Deploy to Render
+    name: 5) Deploy to Render
     needs:
+      - go-quality-security
+      - frontend-security
       - unit-test-report
       - webservice-build
     if: github.ref == 'refs/heads/main'
