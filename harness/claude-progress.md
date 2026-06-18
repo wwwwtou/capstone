@@ -41,3 +41,33 @@
 - 更新过的文件或工件：tiktok-glocal/services/{gateway,content,recommendation}/*.go、postgres/init.sh、docker-compose.yml。
 - 已知风险或未解决问题：主机 8080/5432 被其它进程占用，compose 未把 gateway/postgres 发布到主机端口（不影响容器内部链路）；第 2 步前端接 gateway 时需处理 gateway 对外端口。
 - 下一步最佳动作：第 2 步——React 前端从只调 server.ts mock 改为走 gateway（含线上单服务的轻量 mock 开关）。
+
+### Session 003
+
+- 日期：2026-06-18
+- 本轮目标：方案B 第 2 步——前端走 gateway，保留 mock/真后端开关。
+- 已完成：
+  - server.ts 加入双模式：设 GATEWAY_URL 时把 /api/v1/* 全部转发给 gateway（本地全栈）；不设时用原内存 mock（线上单服务）。前端 api.ts 保持同源 /api/v1 不变，避免 CORS。
+  - monorepo docker-compose：gateway 主机端口改为 ${GATEWAY_HOST_PORT:-8080} 可配置。
+- 运行过的验证：
+  - npm run lint 通过；
+  - 代理模式（GATEWAY_URL=http://localhost:8080）：经 :3000 同源调用，user_123/user_fashion 推荐不同、health 真聚合、login 返回 gateway 真 JWT、configs 来自 Postgres；
+  - mock 模式（不设 GATEWAY_URL）：:3000 返回静态 mock（throughput 1250、3 条固定视频），回归正常。
+- 已记录证据：见本会话 curl 输出。
+- 提交记录：（尚未提交第 2 步）
+- 更新过的文件或工件：server.ts、tiktok-glocal/docker-compose.yml。
+- 已知风险或未解决问题：本机 8080 原被 SmartFoxServer(sfs2x-service.exe) 占用，已按用户许可 kill；端口覆盖 GATEWAY_HOST_PORT 已证实可用。
+- 下一步最佳动作：第 3 步——清理死代码(backend/、backend-go/)、提交的 .exe、AI Studio 残留，整理项目结构 + .gitignore。
+
+### Session 004
+
+- 日期：2026-06-19
+- 本轮目标：修复“配置变更记录离开页面后丢失”的问题 + 清理无用内容 + 重跑。
+- 已完成（修复）：根因是 AlgoConfig 的 Deployment Logs 是组件内存状态（config 本身写库是好的）。改为 DB 持久化：rec_db 新增 config_history 表；recommendation 在 PUT 时写入历史并新增 GET /api/v1/configs/history；gateway 路由该端点；server.ts mock 模式也加了对应内存历史；前端 AlgoConfig 进页面 fetchHistory、部署后从库刷新。
+- 已完成（清理）：删除 backend/、backend-go/(死代码)、根 docker-compose.yml(旧架构)、.github/modernize/(残留)、4 个 *.exe、go-test.tmp.log、metadata.json(AI Studio 残留)；.env.example 重写为真实变量(GATEWAY_URL/PORT/JWT_SECRET)；.gitignore 增加 *.exe；新增根 .dockerignore 缩小 Node 镜像构建上下文。
+- 运行过的验证：gateway/recommendation go vet + recommendation go test 通过；npm run lint 通过；down -v 重建卷后 up --build，curl 验证 history 从 [] → 两次部署后两条(新→旧)，重复请求仍在；前端 :3000 代理模式下 /api/v1/configs/history 返回持久化记录。
+- 已记录证据：见本会话 curl 输出。
+- 提交记录：（第 2 步 + 本轮修复/清理均尚未提交）
+- 更新过的文件或工件：recommendation/{db.go,main.go}、gateway/main.go、postgres/init.sh、server.ts、src/services/api.ts、src/pages/AlgoConfig.tsx；删除若干死文件；.env.example/.gitignore/.dockerignore。
+- 已知风险或未解决问题：config_history 里有几条我测试时写入的记录(engagement 0.85/0.7、chronological 0.5)，无害；如需干净可清空。
+- 下一步最佳动作：用户复查前端历史是否持久；确认后提交（第 2 步 + 修复 + 清理）并继续第 4 步 CI/CD 对齐。

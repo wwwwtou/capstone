@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Compiled Go service binaries (built inside Docker; never commit)
+*.exe
+go-test.tmp.log

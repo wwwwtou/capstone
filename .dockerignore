@@ -1,0 +1,13 @@
+# Root Dockerfile builds only the Node web/frontend service. Keep the build
+# context small and exclude everything it does not need.
+node_modules
+dist
+build
+coverage
+.git
+.github
+harness
+tiktok-glocal-ecommerce-recsys-mvp
+*.log
+.env*
+!.env.example
