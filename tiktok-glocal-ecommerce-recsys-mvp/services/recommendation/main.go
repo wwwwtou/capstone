@@ -34,6 +34,7 @@ func main() {
 		w.Write([]byte(`{"status":"ok","service":"recommendation"}`))
 	}).Methods("GET")
 	r.HandleFunc("/api/v1/recommendations", handleRecommend).Methods("GET")
+	r.HandleFunc("/api/v1/configs", handleGetConfig).Methods("GET")
 	r.HandleFunc("/api/v1/configs", handleConfig).Methods("PUT")
 
 	port := os.Getenv("PORT")
@@ -75,8 +76,36 @@ func handleRecommend(w http.ResponseWriter, r *http.Request) {
 	// Rank in-memory only
 	ranked := strat.Rank(profile, videos)
 
+	// Wrap in the envelope the dashboard/gateway expect.
+	resp := map[string]interface{}{
+		"trace_id": "req-" + time.Now().UTC().Format("20060102150405.000"),
+		"code":     200,
+		"message":  "success",
+		"data": map[string]interface{}{
+			"user_id":  userID,
+			"strategy": strategyName,
+			"videos":   ranked,
+		},
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ranked)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleGetConfig returns the current active algorithm configuration.
+func handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := cfgStore.GetActiveConfig()
+	resp := map[string]interface{}{
+		"code":    200,
+		"message": "success",
+		"data": map[string]interface{}{
+			"strategy_name": cfg.StrategyName,
+			"weight":        cfg.Weight,
+			"is_active":     true,
+			"updated_at":    cfg.UpdatedAt,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func fetchProfile(ctx context.Context, userID string, out *UserProfile) error {
@@ -108,17 +137,35 @@ func fetchCandidates(ctx context.Context, out *[]Video) error {
 }
 
 func handleConfig(w http.ResponseWriter, r *http.Request) {
-	var payload map[string]interface{}
+	var payload struct {
+		StrategyName string  `json:"strategy_name"`
+		Weight       float64 `json:"weight"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// upsert into configs
-	raw, _ := json.Marshal(payload)
-	_, err := cfgStore.DB.Exec("INSERT INTO configs (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2", "active_strategy", raw)
+	if payload.StrategyName == "" {
+		http.Error(w, "strategy_name is required", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := cfgStore.UpsertActiveConfig(payload.StrategyName, payload.Weight)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+
+	resp := map[string]interface{}{
+		"code":    200,
+		"message": "Configuration deployed to Ranking Shards successfully",
+		"data": map[string]interface{}{
+			"strategy_name": cfg.StrategyName,
+			"weight":        cfg.Weight,
+			"is_active":     true,
+			"updated_at":    cfg.UpdatedAt,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

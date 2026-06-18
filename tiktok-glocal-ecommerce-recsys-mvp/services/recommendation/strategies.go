@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 )
 
@@ -24,6 +25,18 @@ func (s EngagementStrategy) Rank(user UserProfile, videos []Video) []Video {
 				score += c
 			}
 		}
+		// Translate the integer match count into a display confidence in
+		// [0.60, 0.99] and an explainable reason string.
+		conf := 0.60 + 0.08*float64(score)
+		if conf > 0.99 {
+			conf = 0.99
+		}
+		v.Score = conf
+		if score > 0 {
+			v.Reason = fmt.Sprintf("interest_match:%s", v.Category)
+		} else {
+			v.Reason = "globally_trending"
+		}
 		scored = append(scored, struct {
 			v     Video
 			score int
@@ -44,6 +57,15 @@ func (s ChronologicalStrategy) Rank(user UserProfile, videos []Video) []Video {
 	out := make([]Video, len(videos))
 	copy(out, videos)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	// Confidence decays with position so the freshest item ranks highest.
+	for i := range out {
+		conf := 0.95 - 0.05*float64(i)
+		if conf < 0.30 {
+			conf = 0.30
+		}
+		out[i].Score = conf
+		out[i].Reason = "recency"
+	}
 	return out
 }
 

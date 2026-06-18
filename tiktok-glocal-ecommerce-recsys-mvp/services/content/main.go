@@ -43,14 +43,15 @@ func main() {
 }
 
 type Video struct {
-	VideoID  string `json:"video_id"`
-	Author   string `json:"author"`
-	Category string `json:"category"`
-	Title    string `json:"title"`
+	VideoID   string    `json:"video_id"`
+	Author    string    `json:"author"`
+	Category  string    `json:"category"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func handleCandidates(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT video_id, author, category, title FROM videos ORDER BY created_at DESC LIMIT 50")
+	rows, err := db.Query("SELECT video_id, author, category, title, created_at FROM videos ORDER BY created_at DESC LIMIT 50")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -59,7 +60,7 @@ func handleCandidates(w http.ResponseWriter, r *http.Request) {
 	var out []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.VideoID, &v.Author, &v.Category, &v.Title); err == nil {
+		if err := rows.Scan(&v.VideoID, &v.Author, &v.Category, &v.Title, &v.CreatedAt); err == nil {
 			out = append(out, v)
 		}
 	}

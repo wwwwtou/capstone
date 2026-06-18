@@ -17,10 +17,25 @@ CREATE TABLE IF NOT EXISTS interactions (
   metadata jsonb,
   created_at timestamptz default now()
 );
+CREATE INDEX IF NOT EXISTS idx_interactions_user ON interactions(user_id);
 CREATE TABLE IF NOT EXISTS profiles (
   user_id text primary key,
   tags jsonb
 );
+
+-- Seed interactions for demo users so each one gets a *different* profile,
+-- which makes the recommendation ranking visibly differ per user_id.
+INSERT INTO interactions (user_id, event_type, metadata) VALUES
+  ('user_123','view', '{"category":"electronics"}'),
+  ('user_123','like', '{"category":"electronics"}'),
+  ('user_123','view', '{"category":"tech"}'),
+  ('user_123','view', '{"category":"tech"}'),
+  ('user_fashion','view', '{"category":"fashion"}'),
+  ('user_fashion','like', '{"category":"fashion"}'),
+  ('user_fashion','view', '{"category":"home"}'),
+  ('user_foodie','view', '{"category":"food"}'),
+  ('user_foodie','like', '{"category":"food"}'),
+  ('user_foodie','view', '{"category":"travel"}');
 EOSQL
 
 echo "Creating tables in content_db..."
@@ -33,10 +48,19 @@ CREATE TABLE IF NOT EXISTS videos (
   title text,
   created_at timestamptz default now()
 );
-INSERT INTO videos (video_id, author, category, title) VALUES
-  ('v1','author1','fashion','Red Dress'),
-  ('v2','author2','electronics','Wireless Earbuds'),
-  ('v3','author3','home','Ceramic Vase')
+CREATE INDEX IF NOT EXISTS idx_videos_category ON videos(category);
+-- Staggered created_at so the ChronologicalStrategy produces a meaningful order.
+INSERT INTO videos (video_id, author, category, title, created_at) VALUES
+  ('v1','StyleHouse','fashion','Autumn Streetwear Lookbook',      now() - interval '1 hour'),
+  ('v2','TechMaster','electronics','Wireless Earbuds Deep Dive',  now() - interval '2 hour'),
+  ('v3','HomeNest','home','Minimalist Ceramic Vase',              now() - interval '3 hour'),
+  ('v4','FoodieIntl','food','Jakarta Street Food Tour',           now() - interval '4 hour'),
+  ('v5','GadgetGuru','tech','Top Tech Gadgets 2026',              now() - interval '5 hour'),
+  ('v6','FitLife','fitness','10-Minute Home Workout',             now() - interval '6 hour'),
+  ('v7','TechMaster','electronics','Mechanical Keyboard Review',  now() - interval '7 hour'),
+  ('v8','Wanderer','travel','Hidden Beaches of Bali',             now() - interval '8 hour'),
+  ('v9','StyleHouse','fashion','Capsule Wardrobe Basics',         now() - interval '9 hour'),
+  ('v10','GadgetGuru','tech','AI Phones Compared',                now() - interval '10 hour')
 ON CONFLICT DO NOTHING;
 EOSQL
 
@@ -47,7 +71,7 @@ CREATE TABLE IF NOT EXISTS configs (
   key text unique,
   value jsonb
 );
-INSERT INTO configs (key, value) VALUES ('active_strategy', jsonb_build_object('name','EngagementStrategy')) ON CONFLICT (key) DO NOTHING;
+INSERT INTO configs (key, value) VALUES ('active_strategy', jsonb_build_object('name','EngagementStrategy','strategy_name','engagement','weight',0.85,'updated_at','seed')) ON CONFLICT (key) DO NOTHING;
 EOSQL
 
 echo "Init complete."
