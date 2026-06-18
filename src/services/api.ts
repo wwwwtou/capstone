@@ -19,10 +19,13 @@ export const recSysService = {
   getRecommendations: (userId: string) => 
     api.get(`/recommendations?user_id=${userId}`),
     
-  getConfigs: () => 
+  getConfigs: () =>
     api.get("/configs"),
-    
-  updateConfigs: (data: { strategy_name: string; weight: number }) => 
+
+  getConfigHistory: () =>
+    api.get("/configs/history"),
+
+  updateConfigs: (data: { strategy_name: string; weight: number }) =>
     api.put("/configs", data),
     
   getHealth: () => 

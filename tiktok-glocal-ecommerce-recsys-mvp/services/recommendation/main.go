@@ -36,6 +36,7 @@ func main() {
 	r.HandleFunc("/api/v1/recommendations", handleRecommend).Methods("GET")
 	r.HandleFunc("/api/v1/configs", handleGetConfig).Methods("GET")
 	r.HandleFunc("/api/v1/configs", handleConfig).Methods("PUT")
+	r.HandleFunc("/api/v1/configs/history", handleConfigHistory).Methods("GET")
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -89,6 +90,21 @@ func handleRecommend(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// handleConfigHistory returns the recent deployment-log entries from the DB.
+func handleConfigHistory(w http.ResponseWriter, r *http.Request) {
+	history, err := cfgStore.GetHistory(20)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code":    200,
+		"message": "success",
+		"data":    history,
+	})
 }
 
 // handleGetConfig returns the current active algorithm configuration.
@@ -154,6 +170,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// Record the change so the deployment log persists across navigation/restarts.
+	if err := cfgStore.AddHistory(cfg.StrategyName, cfg.Weight); err != nil {
+		log.Println("failed to append config history:", err)
 	}
 
 	resp := map[string]interface{}{

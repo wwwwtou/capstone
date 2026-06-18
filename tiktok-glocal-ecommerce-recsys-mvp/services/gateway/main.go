@@ -190,6 +190,7 @@ func main() {
 
 	// Algorithm config: GET is public, PUT (a write to production ranking) needs a valid JWT.
 	recConfigProxy := proxyTo(recommendationServiceURL, "")
+	mux.HandleFunc("/api/v1/configs/history", recConfigProxy)
 	mux.HandleFunc("/api/v1/configs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && !requireAuth(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{

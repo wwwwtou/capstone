@@ -8,7 +8,39 @@ async function startServer() {
 
   app.use(express.json());
 
-  // --- TikTok Glocal API Simulation (Proxy MVP) ---
+  // --- API layer: proxy to the real microservice gateway, or serve in-memory mocks ---
+  // Local full-stack: set GATEWAY_URL (e.g. http://localhost:8090) and every /api/v1/*
+  // request is forwarded to the gateway sitting in front of the Go microservices.
+  // Online single-service deploy (Render): GATEWAY_URL is unset, so the lightweight
+  // in-memory mocks below are served instead.
+  const GATEWAY_URL = process.env.GATEWAY_URL;
+
+  if (GATEWAY_URL) {
+    app.all(/^\/api\/v1\/.*/, async (req, res) => {
+      try {
+        const target = GATEWAY_URL + req.originalUrl;
+        const headers: Record<string, string> = {};
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (["host", "content-length", "connection"].includes(k)) continue;
+          if (typeof v === "string") headers[k] = v;
+        }
+        const init: any = { method: req.method, headers };
+        if (!["GET", "HEAD"].includes(req.method)) {
+          headers["content-type"] = "application/json";
+          init.body = JSON.stringify(req.body ?? {});
+        }
+        const upstream = await fetch(target, init);
+        const body = await upstream.text();
+        res.status(upstream.status);
+        res.set("content-type", upstream.headers.get("content-type") || "application/json");
+        res.send(body);
+      } catch (err: any) {
+        res.status(502).json({ code: 502, message: "Gateway unreachable: " + err.message });
+      }
+    });
+    console.log("API mode: PROXY ->", GATEWAY_URL);
+  } else {
+  console.log("API mode: MOCK (in-memory)");
 
   const JWT_SECRET = "defense-secret-2026";
   
@@ -19,6 +51,9 @@ async function startServer() {
     is_active: true,
     updated_at: new Date().toISOString()
   };
+
+  // In-memory deployment-log history (mirrors the DB-backed history used in full-stack mode).
+  let configHistory: Array<{ strategy_name: string; weight: number; updated_at: string }> = [];
 
   // Auth Middleware Simulation
   const authMiddleware = (req: any, res: any, next: any) => {
@@ -83,12 +118,18 @@ async function startServer() {
       weight,
       updated_at: new Date().toISOString()
     };
+    configHistory.unshift({ strategy_name, weight, updated_at: algorithmConfig.updated_at });
 
     res.json({
       code: 200,
       message: "Configuration deployed to Ranking Shards successfully",
       data: algorithmConfig
     });
+  });
+
+  // Deployment-log history
+  app.get("/api/v1/configs/history", (req, res) => {
+    res.json({ code: 200, message: "success", data: configHistory });
   });
 
   // System Health
@@ -107,6 +148,7 @@ async function startServer() {
         }
     });
   });
+  } // end mock mode
 
   // --- Vite / SPA Handling ---
   if (process.env.NODE_ENV !== "production") {

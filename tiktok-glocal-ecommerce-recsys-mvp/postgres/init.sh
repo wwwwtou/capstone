@@ -72,6 +72,14 @@ CREATE TABLE IF NOT EXISTS configs (
   value jsonb
 );
 INSERT INTO configs (key, value) VALUES ('active_strategy', jsonb_build_object('name','EngagementStrategy','strategy_name','engagement','weight',0.85,'updated_at','seed')) ON CONFLICT (key) DO NOTHING;
+-- Deployment-log history so the dashboard's "Deployment Logs" persist across
+-- page navigation and service restarts.
+CREATE TABLE IF NOT EXISTS config_history (
+  id serial primary key,
+  strategy_name text not null,
+  weight numeric not null,
+  created_at timestamptz default now()
+);
 EOSQL
 
 echo "Init complete."

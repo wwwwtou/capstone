@@ -11,6 +11,7 @@ export default function AlgoConfig() {
 
   useEffect(() => {
     fetchCurrent();
+    fetchHistory();
   }, []);
 
   const fetchCurrent = async () => {
@@ -19,6 +20,15 @@ export default function AlgoConfig() {
       const { strategy_name, weight } = res.data.data;
       setStrategy(strategy_name);
       setWeight(weight);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      const res = await recSysService.getConfigHistory();
+      setHistory(res.data.data || []);
     } catch (e) {
       console.error(e);
     }
@@ -36,7 +46,8 @@ export default function AlgoConfig() {
 
       const res = await recSysService.updateConfigs({ strategy_name: strategy, weight });
       setMsg(res.data.message);
-      setHistory([res.data.data, ...history]);
+      // Reload the persisted deployment log from the DB so it survives navigation.
+      await fetchHistory();
       setTimeout(() => setMsg(""), 3000);
     } catch (e: any) {
       setMsg("Deployment failed: " + (e.response?.data?.message || e.message));

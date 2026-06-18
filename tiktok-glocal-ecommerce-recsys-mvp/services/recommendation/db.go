@@ -82,3 +82,43 @@ func (s *ConfigStore) UpsertActiveConfig(strategyName string, weight float64) (A
 	)
 	return cfg, err
 }
+
+// ConfigChange is one persisted deployment-log entry.
+type ConfigChange struct {
+	StrategyName string  `json:"strategy_name"`
+	Weight       float64 `json:"weight"`
+	UpdatedAt    string  `json:"updated_at"`
+}
+
+// AddHistory appends a deployment-log entry so the dashboard's "Deployment Logs"
+// survive page navigation and service restarts.
+func (s *ConfigStore) AddHistory(strategyName string, weight float64) error {
+	_, err := s.DB.Exec(
+		"INSERT INTO config_history (strategy_name, weight) VALUES ($1,$2)",
+		strategyName, weight,
+	)
+	return err
+}
+
+// GetHistory returns the most recent deployment-log entries, newest first.
+func (s *ConfigStore) GetHistory(limit int) ([]ConfigChange, error) {
+	rows, err := s.DB.Query(
+		"SELECT strategy_name, weight, created_at FROM config_history ORDER BY created_at DESC LIMIT $1",
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ConfigChange{}
+	for rows.Next() {
+		var c ConfigChange
+		var ts time.Time
+		if err := rows.Scan(&c.StrategyName, &c.Weight, &ts); err != nil {
+			continue
+		}
+		c.UpdatedAt = ts.UTC().Format(time.RFC3339)
+		out = append(out, c)
+	}
+	return out, nil
+}
