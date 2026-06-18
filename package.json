@@ -9,7 +9,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:smoke": "node tests/smoke/server.smoke.mjs",
+    "test:integration": "node tests/integration/gateway.integration.mjs",
+    "test:stress": "node tests/stress/recommend.load.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

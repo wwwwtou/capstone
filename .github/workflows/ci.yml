@@ -186,21 +186,64 @@ jobs:
       - name: Step 3/5 - Install dependencies
         run: npm ci
 
-      - name: Step 4/5 - Type check and web build
+      - name: Step 4/6 - Type check and web build
         run: |
           npm run lint
           npm run build
 
-      - name: Step 5/5 - Docker build root webservice
+      - name: Step 5/6 - API smoke test (deployed mock artifact)
+        run: node tests/smoke/server.smoke.mjs
+
+      - name: Step 6/6 - Docker build root webservice
         run: docker build -t e-commerce-video-recsys-mvp:ci .
 
+  microservice-integration:
+    name: 5) Microservice Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Step 1/5 - Checkout source
+        uses: actions/checkout@v4
+
+      - name: Step 2/5 - Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Step 3/5 - Build and start the microservice stack
+        run: |
+          cd tiktok-glocal-ecommerce-recsys-mvp
+          docker compose up -d --build
+
+      - name: Step 4/5 - Wait for the full chain, then run integration + load tests
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost:8080/api/v1/recommendations?user_id=user_123" >/dev/null 2>&1; then
+              ready=1; break
+            fi
+            sleep 3
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Stack did not become ready in time"
+            cd tiktok-glocal-ecommerce-recsys-mvp && docker compose logs
+            exit 1
+          fi
+          BASE=http://localhost:8080 node tests/integration/gateway.integration.mjs
+          BASE=http://localhost:8080 TOTAL=300 CONCURRENCY=20 node tests/stress/recommend.load.mjs
+
+      - name: Step 5/5 - Tear down
+        if: always()
+        run: cd tiktok-glocal-ecommerce-recsys-mvp && docker compose down -v
+
   deploy-render:
-    name: 5) Deploy to Render
+    name: 6) Deploy to Render
     needs:
       - go-quality-security
       - frontend-security
       - unit-test-report
       - webservice-build
+      - microservice-integration
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
