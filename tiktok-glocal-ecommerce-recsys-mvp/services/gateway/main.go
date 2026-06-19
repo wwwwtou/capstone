@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -179,10 +181,7 @@ func handleHealth(userURL, contentURL, recURL string) http.HandlerFunc {
 
 func main() {
 	startTime = time.Now()
-	jwtSecret = os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "defense-secret-2026"
-	}
+	jwtSecret = resolveJWTSecret()
 
 	mux := http.NewServeMux()
 
@@ -247,6 +246,25 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// resolveJWTSecret returns JWT_SECRET from the environment, or generates an
+// ephemeral random secret if it is unset. There is no hardcoded secret in
+// source. An ephemeral secret is fine for a single dev/test gateway (it issues
+// and validates its own tokens), but production MUST set JWT_SECRET so tokens
+// survive restarts and are shared across gateway instances.
+func resolveJWTSecret() string {
+	if s := os.Getenv("JWT_SECRET"); s != "" {
+		return s
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatal("cannot generate an ephemeral JWT secret:", err)
+	}
+	log.Println("WARNING: JWT_SECRET is not set; generated an ephemeral random secret. " +
+		"Tokens will not survive a restart or work across multiple instances. " +
+		"Set JWT_SECRET in production.")
+	return hex.EncodeToString(b)
 }
 
 // countRequests records every request so /health can report real throughput.

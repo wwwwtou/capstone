@@ -42,8 +42,6 @@ async function startServer() {
   } else {
   console.log("API mode: MOCK (in-memory)");
 
-  const JWT_SECRET = "defense-secret-2026";
-  
   // Mock Database in memory
   let algorithmConfig = {
     strategy_name: "engagement",
