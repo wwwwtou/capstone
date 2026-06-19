@@ -15,3 +15,4 @@ go-test.tmp.log
 tests/stress/jmeter-results.jtl
 tests/stress/jmeter-report/
 tests/stress/jmeter-console.log
+jmeter.log
