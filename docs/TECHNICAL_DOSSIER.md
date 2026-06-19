@@ -151,7 +151,7 @@ machine, retry fail-fast, breaker transport, rate limiter, and the degraded use 
 | SQL injection defense | ✅ | All DB access uses parameterized queries. |
 | Dependency scanning | ✅ | `gosec`, `golangci-lint`, `govulncheck` (Go, advisory) + `npm audit --audit-level=high` (frontend, hard gate, currently 0 vulns). |
 | RBAC | 🟡 | Binary admin/non-admin via JWT presence; no role hierarchy. |
-| JWT secret management | 🟡 | Read from `JWT_SECRET` env, but has a hardcoded development fallback. **Recommend** removing the fallback for production. |
+| JWT secret management | ✅ | Read from `JWT_SECRET` env; **no hardcoded secret in source** — generates an ephemeral random secret (with a warning) if unset. Production sets `JWT_SECRET` for stable, multi-instance tokens. |
 | Rate limiting / abuse cap | ✅ | Per-IP token bucket at the gateway (see §6). |
 | XSS | 🟡 | React escapes by default; no explicit CSP / security headers. |
 | Sensitive-data encryption at rest | ❌ | Not implemented (no sensitive PII stored in this MVP). |
@@ -247,7 +247,7 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 | 5 | End-to-end testing | ✅ | 4 Playwright flows |
 | 5 | Stress / performance testing (JMeter) | ✅ | `recommend.jmx`; results in `RESULTS.md` |
 | 6 | JWT auth, SQL-injection defense | ✅ | Gateway JWT; parameterized queries |
-| 6 | Encryption at rest / advanced security | 🟡 | Rate limit ✅; encryption-at-rest ❌; JWT secret fallback to fix |
+| 6 | Encryption at rest / advanced security | 🟡 | Rate limit ✅; JWT secret env-only ✅; encryption-at-rest ❌ (no PII stored) |
 | 6 | Horizontal scaling design | 🟡 | Stateless services ✅; LB/autoscaling documented but not configured |
 | 7 | Technical added value (≥1) | ✅ | **Fault tolerance**: circuit breaker, retry, rate limiting, graceful degradation |
 
@@ -256,12 +256,11 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 ## 13. Known Gaps / Future Work
 
 1. **SonarQube** integration (current static analysis is equivalent but not Sonar).
-2. **JWT secret** — remove the hardcoded development fallback; enforce env-only in prod.
-3. **Security headers / CSP**, and **encryption at rest** if real PII is introduced.
-4. **Horizontal scaling** — add load balancer + autoscaling config (currently single instances).
-5. **Apply clean-architecture layering** to the user/content/gateway services
+2. **Security headers / CSP**, and **encryption at rest** if real PII is introduced.
+3. **Horizontal scaling** — add load balancer + autoscaling config (currently single instances).
+4. **Apply clean-architecture layering** to the user/content/gateway services
    (currently flatter than the recommendation service).
-6. **Note:** `@google/genai` is a declared dependency but is **not used** in code —
+5. **Note:** `@google/genai` is a declared dependency but is **not used** in code —
    there is no LLM integration; the technical added value is the fault-tolerance layer.
 
 ---
