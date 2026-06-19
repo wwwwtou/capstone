@@ -1,0 +1,61 @@
+@startuml recommendation-clean-architecture
+title Recommendation Service - Clean / Onion Architecture (internal/)
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+
+' Dependency rule: arrows point INWARD.
+' transport -> app -> domain ;  infra implements domain ports ;  main wires it all.
+
+package "transport  (delivery layer)" #eef2ff {
+  [Handler\nHTTP routes -> use cases\n(recommend, config, history, health)] as H
+}
+
+package "app  (use cases)" #eefaff {
+  [Service\nRecommend / GetConfig /\nUpdateConfig / History\n(+ cold-start degraded fallback)] as S
+}
+
+package "domain  (core, no external deps)" #fffbe6 {
+  interface ProfileRepository as PR
+  interface ContentRepository as CR
+  interface ConfigRepository as CFR
+  [Entities\nVideo, UserProfile,\nActiveConfig, ConfigChange] as E
+  [RankingStrategy  <<Strategy>>\nEngagement / Chronological\n+ StrategyFactory] as ST
+}
+
+package "infra  (adapters)" #eefcef {
+  [HTTPProfileRepository\nbreaker + retry] as HPR
+  [HTTPContentRepository\nbreaker + retry] as HCR
+  [PostgresConfigRepository] as PCR
+  [CircuitBreaker / callResilient] as RES
+}
+
+[main.go\ncomposition root] as M #whitesmoke
+
+H --> S
+S --> PR
+S --> CR
+S --> CFR
+S ..> ST : ranks with
+S ..> E
+
+HPR ..|> PR
+HCR ..|> CR
+PCR ..|> CFR
+HPR --> RES
+HCR --> RES
+
+M --> H
+M --> S
+M --> HPR
+M --> HCR
+M --> PCR
+
+note bottom
+  Dependency rule: arrows point inward. domain depends on nothing;
+  app depends only on domain ports; infra implements those ports;
+  transport adapts HTTP; main injects concrete adapters into the app.
+  This makes the use cases unit-testable with fakes (internal/app/service_test.go).
+end note
+@enduml

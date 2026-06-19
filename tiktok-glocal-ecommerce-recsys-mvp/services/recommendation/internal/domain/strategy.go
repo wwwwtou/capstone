@@ -1,19 +1,21 @@
-package main
+package domain
 
 import (
 	"fmt"
 	"sort"
 )
 
+// RankingStrategy is the Strategy pattern abstraction for ordering candidate
+// videos. Implementations MUST be pure in-memory operations (no DB / network).
 type RankingStrategy interface {
-	// Rank MUST be pure in-memory operation. No DB or network I/O here.
 	Rank(user UserProfile, videos []Video) []Video
 }
 
+// EngagementStrategy ranks by how well a video's category matches the user's
+// interest tags, falling back to globally-trending order.
 type EngagementStrategy struct{}
 
-func (s EngagementStrategy) Rank(user UserProfile, videos []Video) []Video {
-	// rank by simple tag match counts (higher match first)
+func (EngagementStrategy) Rank(user UserProfile, videos []Video) []Video {
 	scored := make([]struct {
 		v     Video
 		score int
@@ -50,14 +52,13 @@ func (s EngagementStrategy) Rank(user UserProfile, videos []Video) []Video {
 	return out
 }
 
+// ChronologicalStrategy ranks newest-first.
 type ChronologicalStrategy struct{}
 
-func (s ChronologicalStrategy) Rank(user UserProfile, videos []Video) []Video {
-	// newest first
+func (ChronologicalStrategy) Rank(_ UserProfile, videos []Video) []Video {
 	out := make([]Video, len(videos))
 	copy(out, videos)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	// Confidence decays with position so the freshest item ranks highest.
 	for i := range out {
 		conf := 0.95 - 0.05*float64(i)
 		if conf < 0.30 {
@@ -69,6 +70,7 @@ func (s ChronologicalStrategy) Rank(user UserProfile, videos []Video) []Video {
 	return out
 }
 
+// StrategyFactory returns the ranking strategy for an internal strategy class.
 func StrategyFactory(name string) RankingStrategy {
 	switch name {
 	case "EngagementStrategy":
@@ -77,5 +79,17 @@ func StrategyFactory(name string) RankingStrategy {
 		return ChronologicalStrategy{}
 	default:
 		return EngagementStrategy{}
+	}
+}
+
+// StrategyClassFor maps a UI label to the internal strategy class name.
+func StrategyClassFor(strategyName string) string {
+	switch strategyName {
+	case "chronological":
+		return "ChronologicalStrategy"
+	case "engagement", "diversity":
+		return "EngagementStrategy"
+	default:
+		return "EngagementStrategy"
 	}
 }

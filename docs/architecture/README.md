@@ -20,6 +20,7 @@ CI/CD, and the circuit-breaker / retry / rate-limit fault-tolerance layer).
 | `sequence-get-recommendations.puml` | Core use-case sequence | `GET /api/v1/recommendations` end to end, including rate-limit 429, circuit-breaker routing, concurrent downstream fetches, and the cold-start degraded fallback. |
 | `cicd-pipeline.puml` | CI/CD pipeline | The six GitHub Actions jobs and the gated Render deploy. |
 | `usecase.puml` | Use case diagram | Terminal User vs Admin/Operator actors and their use cases. |
+| `recommendation-clean-architecture.puml` | Clean/onion architecture | The core recommendation service's layered code structure (`internal/domain` → `app` → `infra`/`transport`), showing the repository ports and the adapters that implement them. Mirrors the actual package layout. |
 
 Pre-rendered PNGs live in `png/` for quick viewing / screenshots.
 

@@ -28,7 +28,7 @@ package "API Gateway Layer (Go)" {
 }
 
 package "Domain Services (Go microservices)" {
-  [Recommendation Service\n(Strategy + Factory ranking;\nbreaker + retry + cold-start fallback)] as rec
+  [Recommendation Service\n(clean arch: domain/app/infra/transport;\nStrategy + Factory ranking;\nbreaker + retry + cold-start fallback)] as rec
   [User Profile Service\n(interactions, profile aggregation)] as usvc
   [Content Service\n(video candidates)] as csvc
 }

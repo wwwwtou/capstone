@@ -1,16 +1,13 @@
-package main
+// Package infra holds the outward-facing adapters that implement the domain
+// repository ports: HTTP clients to the user/content services and the Postgres
+// config store, plus the fault-tolerance primitives that guard them.
+package infra
 
 import (
 	"errors"
 	"sync"
 	"time"
 )
-
-// This file implements fault-tolerance primitives (circuit breaker + retry with
-// backoff) using only the standard library, matching the project's
-// no-external-dependency convention. They guard the recommendation service's
-// synchronous calls to the user and content microservices so a slow or failing
-// downstream cannot cascade into the core recommendation path.
 
 // ErrCircuitOpen is returned when a call is rejected because the breaker is open.
 var ErrCircuitOpen = errors.New("circuit breaker open")
@@ -24,8 +21,6 @@ const (
 )
 
 // CircuitBreaker is a minimal three-state breaker (closed -> open -> half-open).
-// After maxFailures consecutive failures it opens and fails fast; after
-// openTimeout it allows a single half-open probe to decide whether to close.
 type CircuitBreaker struct {
 	name        string
 	maxFailures int
@@ -41,8 +36,6 @@ func NewCircuitBreaker(name string, maxFailures int, openTimeout time.Duration) 
 	return &CircuitBreaker{name: name, maxFailures: maxFailures, openTimeout: openTimeout}
 }
 
-// allow reports whether a call may proceed and transitions open -> half-open
-// once the cooldown has elapsed.
 func (cb *CircuitBreaker) allow() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -67,7 +60,6 @@ func (cb *CircuitBreaker) onFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	cb.failures++
-	// A failed half-open probe, or hitting the threshold, (re)opens the breaker.
 	if cb.state == cbHalfOpen || cb.failures >= cb.maxFailures {
 		cb.state = cbOpen
 		cb.openedAt = time.Now()
@@ -104,8 +96,7 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 }
 
 // callResilient retries fn up to attempts times with exponential backoff, each
-// attempt guarded by the breaker. It fails fast (no further retries) the moment
-// the breaker reports open, so a downstream outage is not hammered.
+// attempt guarded by the breaker, failing fast the moment the breaker opens.
 func callResilient(cb *CircuitBreaker, attempts int, base time.Duration, fn func() error) error {
 	var err error
 	for i := 0; i < attempts; i++ {
@@ -117,7 +108,7 @@ func callResilient(cb *CircuitBreaker, attempts int, base time.Duration, fn func
 			return err
 		}
 		if i < attempts-1 {
-			time.Sleep(base * time.Duration(1<<i)) // 1x, 2x, 4x ... backoff
+			time.Sleep(base * time.Duration(1<<i))
 		}
 	}
 	return err
