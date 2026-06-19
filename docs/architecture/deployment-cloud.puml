@@ -1,0 +1,33 @@
+@startuml deployment-cloud
+title Deployment - Cloud Targets (Render single-service today; AWS IaC option)
+
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+actor "Browser" as br
+
+package "Render (current cloud deploy - render.yaml)" {
+  node "Render Web Service\nplan: free, region: singapore\nenv: docker, Dockerfile (root)" as render {
+    artifact "Node server.ts\n(MOCK mode: in-memory /api/v1/*)\nhealthCheckPath /api/v1/health" as app
+  }
+  note bottom of render
+    autoDeploy: true (push to main -> deploy hook in CI job 6)
+    Single artifact: serves the React build + mock API.
+    The full Go microservice mesh runs via docker-compose (see
+    physical-architecture) or the AWS target below.
+  end note
+}
+
+package "AWS (Terraform IaC option - terraform/main.tf)" {
+  node "Default VPC" {
+    node "EC2 (Amazon Linux 2)\nuser-data bootstraps Docker\n+ docker-compose stack" as ec2 {
+      artifact "gateway + recommendation\n+ user + content" as svcs
+      database "postgres + redis\n(containers)" as data
+    }
+  }
+}
+
+br --> render : https
+br ..> ec2 : https (when provisioned)
+svcs ..> data
+@enduml

@@ -1,0 +1,27 @@
+@startuml usecase
+title Use Case Diagram - Recommendation Admin Platform
+
+left to right direction
+skinparam shadowing false
+
+actor "Terminal User" as U
+actor "Admin / Operator" as A
+
+rectangle "Video Recommendation System" {
+  usecase "Request Recommendations" as UC1
+  usecase "Simulate Recommendations\nby user_id" as UC2
+  usecase "View System Health\n& Microservice Topology" as UC3
+  usecase "View Algorithm Config" as UC4
+  usecase "Update Algorithm Config\n(strategy, weight)" as UC5
+  usecase "Login to Dashboard (JWT)" as UC6
+}
+
+U --> UC1
+A --> UC2
+A --> UC3
+A --> UC4
+A --> UC5
+
+UC5 ..> UC6 : <<include>>
+UC2 ..> UC1 : <<extend>>
+@enduml

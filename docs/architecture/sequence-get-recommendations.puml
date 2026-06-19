@@ -1,0 +1,47 @@
+@startuml sequence-get-recommendations
+title Core Use Case - GET /api/v1/recommendations (with fault tolerance)
+
+skinparam shadowing false
+autonumber
+
+actor Client
+participant "Node server.ts\n(proxy)" as BFF
+participant "API Gateway (Go)" as GW
+participant "Recommendation\nService" as REC
+participant "User Service" as USR
+participant "Content Service" as CNT
+database "rec_db" as DB
+participant "Ranking Strategy\n(Strategy + Factory)" as RNG
+
+Client -> BFF : GET /api/v1/recommendations?user_id=123
+BFF -> GW : proxy (full-stack mode)
+
+GW -> GW : per-IP rate limit (token bucket)
+alt rate limit exceeded
+  GW --> Client : 429 Too Many Requests (Retry-After)
+end
+
+GW -> REC : route via circuit breaker [recommendation]
+
+note over REC : profile and candidates fetched concurrently\n(goroutines + WaitGroup); each call guarded by\ncircuit breaker + retry-with-backoff
+REC -> USR : GET /internal/users/123/profile
+USR --> REC : 200 profile tags
+REC -> CNT : GET /internal/content/candidates
+CNT --> REC : 200 candidate videos
+
+alt content unavailable (retries exhausted or breaker open)
+  REC --> GW : 503 content service unavailable
+  GW --> Client : 503
+else user-service unavailable
+  REC -> REC : fallback to cold-start (empty profile)\nset degraded = true
+end
+
+REC -> DB : SELECT active strategy
+DB --> REC : strategy_name, weight
+REC -> RNG : Rank(profile, candidates)
+note over RNG : pure in-memory ranking\nscore plus reason per video
+RNG --> REC : sorted videos
+REC --> GW : 200 data videos, strategy, degraded
+GW --> BFF : 200
+BFF --> Client : 200 JSON
+@enduml

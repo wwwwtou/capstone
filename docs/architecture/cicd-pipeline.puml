@@ -1,0 +1,36 @@
+@startuml cicd-pipeline
+title CI/CD Pipeline - GitHub Actions (.github/workflows/ci.yml)
+
+skinparam shadowing false
+start
+:Developer push / PR to main;
+
+fork
+  :1) Go Quality & Security
+  go vet (hard gate)
+  gosec / golangci-lint / govulncheck (advisory);
+fork again
+  :2) Frontend Dependency Security
+  npm audit --audit-level=high (hard gate);
+fork again
+  :3) Unit Tests - Report Artifact
+  go test across all services (53 cases)
+  -> unit-test-report.md;
+fork again
+  :4) Lint & Build Checks
+  tsc --noEmit, vite build
+  API smoke test, docker build;
+fork again
+  :5) Microservice Integration
+  docker compose up --build
+  integration (14) + load test, then teardown;
+end fork
+
+if (all jobs green AND ref == refs/heads/main?) then (yes)
+  :6) Deploy to Render
+  POST deploy hook (skips if secret unset);
+  stop
+else (no / PR)
+  stop
+endif
+@enduml

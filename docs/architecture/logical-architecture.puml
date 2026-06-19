@@ -1,0 +1,60 @@
+@startuml logical-architecture
+title Logical Architecture - E-commerce Video Recommendation System
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+actor "Admin / Operator" as admin
+actor "Terminal User" as user
+
+package "Presentation Layer" {
+  [React Admin Dashboard\n(Vite SPA: DashboardHome, Simulator, AlgoConfig)] as react
+}
+
+package "Edge / BFF Layer" {
+  [Node server.ts\n(dual-mode: in-memory mock  OR  reverse-proxy to gateway)] as bff
+}
+
+package "API Gateway Layer (Go)" {
+  [API Gateway] as gw
+  note right of gw
+    Cross-cutting concerns:
+    * JWT auth (HS256, stdlib) on writes
+    * Per-IP rate limiter -> 429
+    * Circuit breaker per downstream -> 503
+    * Health aggregation + request counting
+  end note
+}
+
+package "Domain Services (Go microservices)" {
+  [Recommendation Service\n(Strategy + Factory ranking;\nbreaker + retry + cold-start fallback)] as rec
+  [User Profile Service\n(interactions, profile aggregation)] as usvc
+  [Content Service\n(video candidates)] as csvc
+}
+
+package "Data Layer" {
+  database "PostgreSQL\n(database-per-service)" as pg {
+    [user_db]
+    [content_db]
+    [rec_db]
+  }
+  database "Redis\n(profile cache, key-value)" as redis
+}
+
+admin --> react
+user ..> react : (demo client)
+react --> bff : /api/v1/*  (same-origin)
+bff --> gw : proxy (full-stack mode)
+
+gw --> rec
+gw --> usvc
+gw --> csvc
+
+rec --> usvc : profile (internal, resilient)
+rec --> csvc : candidates (internal, resilient)
+rec --> rec_db
+usvc --> user_db
+usvc --> redis
+csvc --> content_db
+@enduml

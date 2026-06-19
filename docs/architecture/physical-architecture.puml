@@ -1,0 +1,43 @@
+@startuml physical-architecture
+title Physical / Deployment Architecture - Local & Self-hosted (docker-compose)
+
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+actor "Browser" as br
+
+node "Developer Host / VM" {
+
+  artifact "frontend (Node + tsx)\nnpm run dev  ::3000\n[not in compose]" as fe
+
+  node "Docker Engine  (compose project: tiktok-glocal-ecommerce-recsys-mvp)" {
+
+    node "gateway  (Go)\nbuild: services/gateway\npublished ::8080" as gw
+    node "recommendation (Go)\nbuild: services/recommendation\n::8083" as rec
+    node "user (Go)\nbuild: services/user\n::8081" as usr
+    node "content (Go)\nbuild: services/content\n::8082" as cnt
+
+    database "postgres:15\n::5432\nvol: ./postgres initdb\n(user_db, content_db, rec_db)" as pg
+    database "redis:7\n::6379" as rd
+  }
+}
+
+br --> fe : http ::3000
+fe --> gw : GATEWAY_URL=http://localhost:8080
+
+gw --> usr  : USER_SERVICE_URL
+gw --> cnt  : CONTENT_SERVICE_URL
+gw --> rec  : RECOMMENDATION_SERVICE_URL
+
+rec --> usr : http://user:8081
+rec --> cnt : http://content:8082
+rec --> pg  : rec_db
+usr --> pg  : user_db
+usr --> rd
+cnt --> pg  : content_db
+
+note bottom of gw
+  depends_on: user, content, recommendation
+  JWT_SECRET, RATE_LIMIT_RPS/_BURST via env
+end note
+@enduml

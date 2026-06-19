@@ -1,6 +1,11 @@
 # E-commerce Video Recommendation System (Open-Source MVP)
 ## Architecture Blueprint & Project Defense Documentation
 
+> **Authoritative diagrams live in [`docs/architecture/`](docs/architecture/) (PlantUML, kept in sync with the code).**
+> The Mermaid sketches below are the original blueprint and are retained for
+> historical context only — some are aspirational (e.g. the Clean Architecture
+> class diagram, the AWS-only deployment) and no longer match the implementation.
+
 ### 1. UML Diagrams (Mermaid)
 
 #### 1.1 Use Case Diagram

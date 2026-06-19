@@ -1,0 +1,33 @@
+@startuml ddd-context-map
+title DDD Context Map - Bounded Contexts & Relationships
+
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam rectangle {
+  roundCorner 12
+}
+
+rectangle "Recommendation Context\n<<Core Domain>>\n- ranking strategies (Strategy+Factory)\n- active config / deployment history\n[services/recommendation]" as REC #lightyellow
+
+rectangle "User Profile Context\n<<Supporting>>\n- interactions, profile aggregation\n[services/user]" as USR #lightcyan
+
+rectangle "Content Context\n<<Supporting>>\n- video catalog / candidates\n[services/content]" as CNT #lightcyan
+
+rectangle "Dashboard / Monitoring Context\n<<Generic Subdomain>>\n- health, topology, simulator UI\n[gateway /health + React]" as DASH #whitesmoke
+
+rectangle "API Gateway\n<<Anti-Corruption / Open Host>>\n- JWT, rate limit, breaker, routing\n[services/gateway]" as GW #lavender
+
+USR -down-> REC : Customer / Supplier\n(profile tags upstream)
+CNT -down-> REC : Customer / Supplier\n(candidate videos upstream)
+REC -down-> DASH : Published Language\n(recommendation envelope: score, reason, degraded)
+GW ..> REC : ACL / routing
+GW ..> USR : ACL / routing
+GW ..> CNT : ACL / routing
+GW ..> DASH : aggregates health
+
+note as N
+  Each context owns its own database (database-per-service):
+  User -> user_db (+Redis cache), Content -> content_db, Recommendation -> rec_db.
+  No shared schema or cross-context DB foreign keys; integration is via HTTP only.
+end note
+@enduml

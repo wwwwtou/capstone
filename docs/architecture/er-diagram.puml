@@ -1,0 +1,76 @@
+@startuml er-diagram
+title ER Diagram - Database-per-Service (PostgreSQL logical DBs + Redis cache)
+
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+
+' ---------- user_db : owned by the User Profile Service (services/user) ----------
+package "user_db   <<User Profile Service>>" #eef7ff {
+  entity "interactions" as interactions {
+    * id : serial <<PK>>
+    --
+    user_id : text  <<index: idx_interactions_user>>
+    event_type : text  (view | like | ...)
+    metadata : jsonb  (e.g. category=electronics)
+    created_at : timestamptz = now()
+  }
+  entity "profiles" as profiles {
+    * user_id : text <<PK>>
+    --
+    tags : jsonb  (category to weight map)
+  }
+}
+
+' ---------- content_db : owned by the Content Service (services/content) ----------
+package "content_db   <<Content Service>>" #eefcef {
+  entity "videos" as videos {
+    * id : serial <<PK>>
+    --
+    video_id : text <<unique>>
+    author : text
+    category : text  <<index: idx_videos_category>>
+    title : text
+    created_at : timestamptz = now()
+  }
+}
+
+' ---------- rec_db : owned by the Recommendation Service (services/recommendation) ----------
+package "rec_db   <<Recommendation Service>>" #fffbe6 {
+  entity "configs" as configs {
+    * id : serial <<PK>>
+    --
+    key : text <<unique>>  (e.g. active_strategy)
+    value : jsonb  (name, strategy_name, weight, updated_at)
+  }
+  entity "config_history" as config_history {
+    * id : serial <<PK>>
+    --
+    strategy_name : text  <<not null>>
+    weight : numeric  <<not null>>
+    created_at : timestamptz = now()
+  }
+}
+
+' ---------- Redis : NoSQL key-value cache owned by the User Profile Service ----------
+note as RedisNote #ffecec
+  <b>Redis (NoSQL, key-value)</b>
+  key  :  profile:{user_id}
+  val  :  JSON { user_id, tags:{category:count} }
+  TTL  :  10 min  (write-through cache of the
+          derived profile; DEL on new interaction)
+end note
+
+' Intra-DB / app-level relationships.
+' NOTE: database-per-service means there are NO physical cross-DB foreign keys;
+' the links below are logical and enforced in the application / HTTP layer.
+interactions ||..o{ profiles      : "same user_id\n(aggregated, app-level)"
+interactions }o..o{ videos         : "metadata.video_id\n(app-level, cross-service)"
+configs      ||..o{ config_history : "strategy changes\nappended on deploy"
+profiles     .. RedisNote          : "cached as"
+
+legend right
+  PK = primary key   |   <<index>> = btree index   |   <<unique>> = unique constraint
+  Solid = intra-service     Dashed = cross-service (HTTP, no DB FK)
+endlegend
+@enduml
