@@ -126,3 +126,24 @@
 - 更新过的文件或工件：services/recommendation/{resilience.go,resilience_test.go,main.go}、services/gateway/{resilience.go,resilience_test.go,ratelimit.go,ratelimit_test.go,main.go}；docs/architecture/*(8 puml+8 png+README)；PRD_ARCHITECTURE.md。
 - 已知风险/未解决：技术清单仍缺的项见 session-handoff（E2E 自动化、DDD 分层落地代码、SonarQube、JWT secret 硬编码、敏感数据加密等）。
 - 下一步最佳动作：按用户优先级继续补 E2E(Playwright) 或 DDD 分层重构等。
+
+### Session 008
+
+- 日期：2026-06-19
+- 本轮目标：补 E2E(第四测试维度) + DDD 分层重构(并同步架构图)。
+- 已完成（E2E）：
+  - 装 `@playwright/test` + 下载 Chromium(113MB)。`playwright.config.ts`：跑在 server.ts mock 模式、专用端口 3101、强制 `GATEWAY_URL=""`(避免复用 :3000 的代理态 dev server)、单 worker(mock 有共享内存态)、expect 超时 10s。
+  - `tests/e2e/admin-flows.spec.ts`：4 条关键用户故事(Dashboard 健康/拓扑、登录、模拟器推荐、算法配置部署+日志)。本地 4/4 通过。
+  - CI 新增作业「6) End-to-End Tests (Playwright)」(装 chromium→`npm run test:e2e`，传 playwright-report artifact)；deploy-render 依赖加 e2e-tests，部署作业改名 7)。
+  - 踩坑：Playwright reuseExistingServer 复用了 :3000 上残留的代理态 dev server→返回真栈数据导致断言失败；改专用端口+强制 mock 解决。getByText 命中 `<pre>` JSON 与卡片两处→用 getByRole heading + .first()。
+- 已完成（DDD 分层重构，仅 recommendation 核心服务）：
+  - 扁平包→`internal/{domain,app,infra,transport}` 洋葱/整洁架构，依赖向内：
+    - domain：实体 + RankingStrategy(策略+工厂) + 仓储端口(ProfileRepository/ContentRepository/ConfigRepository)，无外部依赖。
+    - app：Service 用例(Recommend 含冷启动降级、GetConfig/UpdateConfig/History)，只依赖 domain 端口。
+    - infra：HTTP user/content 仓储(断路器+重试)、Postgres 配置仓储、resilience。
+    - transport：HTTP handler。main.go 只做组装(composition root)。
+  - 删除旧扁平文件(models/strategies/db/resilience + 旧测试)，测试迁到各层；新增 app 层用例测试(用 fake 仓储测降级/必需失败/个性化)。单测 53→57(保留全部 strategy/resilience 子测试，未削弱)。
+  - 同步架构图：新增 `docs/architecture/recommendation-clean-architecture.puml`(+PNG，渲染核对正确)，logical-architecture 标注分层。
+- 运行过的验证：4 服务 gofmt+vet+test 全过(57)；rebuild recommendation 镜像→集成 14/14；E2E 本地 4/4；PlantUML 渲染 0 报错。提交 `3ebeb09`(E2E)、`fcd54c5`(重构)，已 push。
+- 已知风险/未解决：CI run(fcd54c5)结果待确认(unit 应 57、e2e 作业、集成均应绿)。技术清单剩余：SonarQube(有替代)、JWT secret 硬编码 fallback、敏感数据加密、负载均衡具体配置。
+- 下一步最佳动作：确认 CI 全绿；四测试维度已齐，DDD 已落地代码。
