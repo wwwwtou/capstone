@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +16,13 @@ import (
 )
 
 var cfgStore *ConfigStore
+
+// Per-downstream circuit breakers guarding the synchronous calls the
+// recommendation path makes to the user and content services.
+var (
+	userBreaker    = NewCircuitBreaker("user-service", 3, 5*time.Second)
+	contentBreaker = NewCircuitBreaker("content-service", 3, 5*time.Second)
+)
 
 func main() {
 	dsn := os.Getenv("POSTGRES_URL")
@@ -65,9 +73,22 @@ func handleRecommend(w http.ResponseWriter, r *http.Request) {
 	go func() { defer wg.Done(); pErr = fetchProfile(ctx, userID, &profile) }()
 	go func() { defer wg.Done(); cErr = fetchCandidates(ctx, &videos) }()
 	wg.Wait()
-	if pErr != nil || cErr != nil {
-		http.Error(w, "upstream error", http.StatusBadGateway)
+
+	// Content candidates are essential: without them there is nothing to rank,
+	// so a content outage (after retries + breaker) is a hard 503.
+	if cErr != nil {
+		log.Println("content service unavailable after retries/breaker:", cErr)
+		http.Error(w, "content service unavailable", http.StatusServiceUnavailable)
 		return
+	}
+	// The user profile is non-essential. On failure we degrade gracefully to a
+	// cold-start (empty profile), which the EngagementStrategy serves as
+	// globally-trending results, instead of failing the whole request.
+	degraded := false
+	if pErr != nil {
+		log.Println("profile fetch failed, falling back to cold-start:", pErr)
+		profile = UserProfile{UserID: userID}
+		degraded = true
 	}
 
 	// read active strategy from rec_db
@@ -85,6 +106,7 @@ func handleRecommend(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]interface{}{
 			"user_id":  userID,
 			"strategy": strategyName,
+			"degraded": degraded,
 			"videos":   ranked,
 		},
 	}
@@ -124,18 +146,34 @@ func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func fetchProfile(ctx context.Context, userID string, out *UserProfile) error {
-	userSvc := os.Getenv("USER_SERVICE_URL")
-	if userSvc == "" {
-		userSvc = "http://user:8081"
+// doGetJSON performs a single GET and decodes a 2xx JSON body into out. A
+// transport error or non-2xx status is returned as an error so the circuit
+// breaker counts it as a failure.
+func doGetJSON(ctx context.Context, url string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
 	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", userSvc+"/internal/users/"+userID+"/profile", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("GET %s: unexpected status %d", url, resp.StatusCode)
+	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func fetchProfile(ctx context.Context, userID string, out *UserProfile) error {
+	userSvc := os.Getenv("USER_SERVICE_URL")
+	if userSvc == "" {
+		userSvc = "http://user:8081"
+	}
+	url := userSvc + "/internal/users/" + userID + "/profile"
+	return callResilient(userBreaker, 3, 20*time.Millisecond, func() error {
+		return doGetJSON(ctx, url, out)
+	})
 }
 
 func fetchCandidates(ctx context.Context, out *[]Video) error {
@@ -143,13 +181,10 @@ func fetchCandidates(ctx context.Context, out *[]Video) error {
 	if contentSvc == "" {
 		contentSvc = "http://content:8082"
 	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", contentSvc+"/internal/content/candidates", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return json.NewDecoder(resp.Body).Decode(out)
+	url := contentSvc + "/internal/content/candidates"
+	return callResilient(contentBreaker, 3, 20*time.Millisecond, func() error {
+		return doGetJSON(ctx, url, out)
+	})
 }
 
 func handleConfig(w http.ResponseWriter, r *http.Request) {

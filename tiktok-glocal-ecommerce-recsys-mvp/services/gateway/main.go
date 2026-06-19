@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -21,9 +23,22 @@ var (
 	jwtSecret string
 )
 
-func proxyTo(target string, removePrefix string) http.HandlerFunc {
+func proxyTo(target string, removePrefix string, cb *CircuitBreaker) http.HandlerFunc {
 	url, _ := url.Parse(target)
 	proxy := httputil.NewSingleHostReverseProxy(url)
+	// Guard every downstream hop with the per-service circuit breaker.
+	proxy.Transport = breakerTransport{base: http.DefaultTransport, cb: cb}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		if errors.Is(err, ErrCircuitOpen) {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+				"code": 503, "message": "downstream temporarily unavailable (circuit open)",
+			})
+			return
+		}
+		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
+			"code": 502, "message": "bad gateway",
+		})
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		// rewrite path to preserve downstream expected route
 		if removePrefix != "" && strings.HasPrefix(r.URL.Path, removePrefix) {
@@ -175,21 +190,26 @@ func main() {
 	contentServiceURL := envOr("CONTENT_SERVICE_URL", "http://localhost:8082")
 	recommendationServiceURL := envOr("RECOMMENDATION_SERVICE_URL", "http://localhost:8083")
 
+	// One circuit breaker per downstream service (shared across that service's routes).
+	userBreaker := NewCircuitBreaker("user", 5, 5*time.Second)
+	contentBreaker := NewCircuitBreaker("content", 5, 5*time.Second)
+	recBreaker := NewCircuitBreaker("recommendation", 5, 5*time.Second)
+
 	mux.HandleFunc("/api/v1/health", handleHealth(userServiceURL, contentServiceURL, recommendationServiceURL))
 	mux.HandleFunc("/api/v1/login", handleLogin)
 
 	// route prefixes
-	mux.HandleFunc("/api/v1/users/", proxyTo(userServiceURL, "/api/v1/users"))
-	mux.HandleFunc("/internal/users/", proxyTo(userServiceURL, "/internal/users"))
+	mux.HandleFunc("/api/v1/users/", proxyTo(userServiceURL, "/api/v1/users", userBreaker))
+	mux.HandleFunc("/internal/users/", proxyTo(userServiceURL, "/internal/users", userBreaker))
 
-	mux.HandleFunc("/api/v1/content/", proxyTo(contentServiceURL, "/api/v1/content"))
-	mux.HandleFunc("/internal/content/", proxyTo(contentServiceURL, "/internal/content"))
+	mux.HandleFunc("/api/v1/content/", proxyTo(contentServiceURL, "/api/v1/content", contentBreaker))
+	mux.HandleFunc("/internal/content/", proxyTo(contentServiceURL, "/internal/content", contentBreaker))
 
-	mux.HandleFunc("/api/v1/recommendations", proxyTo(recommendationServiceURL, ""))
-	mux.HandleFunc("/api/v1/recommendations/", proxyTo(recommendationServiceURL, ""))
+	mux.HandleFunc("/api/v1/recommendations", proxyTo(recommendationServiceURL, "", recBreaker))
+	mux.HandleFunc("/api/v1/recommendations/", proxyTo(recommendationServiceURL, "", recBreaker))
 
 	// Algorithm config: GET is public, PUT (a write to production ranking) needs a valid JWT.
-	recConfigProxy := proxyTo(recommendationServiceURL, "")
+	recConfigProxy := proxyTo(recommendationServiceURL, "", recBreaker)
 	mux.HandleFunc("/api/v1/configs/history", recConfigProxy)
 	mux.HandleFunc("/api/v1/configs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && !requireAuth(r) {
@@ -201,12 +221,25 @@ func main() {
 		recConfigProxy(w, r)
 	})
 
+	// Per-IP rate limit as an abuse/DDoS safety cap. Defaults are generous so
+	// normal traffic and load tests pass; tune via RATE_LIMIT_RPS / _BURST.
+	limiter := NewIPRateLimiter(envFloat("RATE_LIMIT_RPS", 1000), envFloat("RATE_LIMIT_BURST", 2000))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	log.Println("Gateway listening on :" + port)
-	log.Fatal(http.ListenAndServe(":"+port, countRequests(mux)))
+	log.Fatal(http.ListenAndServe(":"+port, countRequests(limiter.Middleware(mux))))
+}
+
+func envFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return def
 }
 
 func envOr(key, def string) string {
