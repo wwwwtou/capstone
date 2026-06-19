@@ -2,11 +2,14 @@
 
 ## 当前状态（截至 2026-06-19，Session 008 结束）
 
-**新增：容错机制(断路器+重试+限流) + PlantUML 架构图对齐，CI run #23 全绿，HEAD==origin/main==`613c687`。**
+**新增：E2E(Playwright，第四测试维度) + DDD 整洁架构重构(recommendation)，CI 全绿(commit `fcd54c5`，7 作业)，HEAD==origin/main。**
 
-- 容错(纯 stdlib)：recommendation 对 user/content 调用加断路器+重试+冷启动降级(`degraded:true`)；gateway 加 per-IP 限流(429) + 反代断路器(503)。单测 42→53。真栈故障注入验证通过(stop user→200 兜底→恢复)。
-- 架构图：`docs/architecture/` 下 8 张 PlantUML(源 .puml + 渲染 png)：logical/physical/deployment-cloud/ddd-context-map/er-diagram(详细，按 per-service 库分组)/sequence/cicd/usecase。本机渲染器：plantuml.jar=`C:\Users\Lenovo\.vscode\extensions\jebbs.plantuml-2.18.1\plantuml.jar`，Graphviz=`D:\wwtDownload\Graphviz\bin\dot.exe`。渲染命令见 docs/architecture/README.md。
-- 技术清单仍缺(按性价比，下次可继续)：①E2E 自动化(Playwright，唯一缺的测试维度)；②DDD 分层落地到代码(目前服务多为扁平 main.go，class 图的 repository 接口未在代码实现)；③SonarQube(现用 gosec/golangci/govulncheck/npm audit 替代)；④JWT secret 去硬编码 fallback、加安全头、敏感数据加密；⑤水平扩展/负载均衡的具体配置。增值项(第7条)已通过容错机制满足。
+- 四测试维度齐全：单元(57)/集成(14)/E2E(4)/压测(JMeter+node)。E2E 在 CI 作业「6) End-to-End Tests (Playwright)」跑，本地 `npm run test:e2e`；报告 `npx playwright show-report` 或 CI artifact `playwright-report`。
+- DDD 落地代码：recommendation 重构为 `internal/{domain,app,infra,transport}` 整洁/洋葱架构(依赖向内，仓储端口+适配器)，main.go 仅组装；新增 app 层 fake 仓储用例测试。架构图新增 `docs/architecture/recommendation-clean-architecture.puml`(+PNG)。
+- 容错(Session 007)：断路器+重试+冷启动降级(recommendation)、per-IP 限流+反代断路器(gateway)，真栈故障注入验证过。
+- 架构图：`docs/architecture/` 下 9 张 PlantUML(.puml + png)。渲染器：plantuml.jar=`C:\Users\Lenovo\.vscode\extensions\jebbs.plantuml-2.18.1\plantuml.jar`，Graphviz=`D:\wwtDownload\Graphviz\bin\dot.exe`(注意 PowerShell cwd 可能漂移，用绝对路径渲染)。
+- E2E 关键配置：mock 模式、专用端口 3101、强制 `GATEWAY_URL=""`、单 worker(mock 共享态)；Chromium 已装。
+- 技术清单仍缺(按性价比)：①SonarQube(现用 gosec/golangci/govulncheck/npm audit 替代)；②JWT secret 去硬编码 fallback、加安全头、敏感数据加密；③水平扩展/负载均衡具体配置。增值项(第7条)已由容错机制满足；DDD 分层已落代码。其余 3 个服务(user/content/gateway)仍较扁平，如需可同法分层。
 
 ---
 
