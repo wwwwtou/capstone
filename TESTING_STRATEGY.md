@@ -1,21 +1,26 @@
 # Testing Strategy & Execution Proof
 
 ## 1. Unit Testing (Backend)
-*   **Methodology:** Focus on the `RankingEngine` logic without DB dependencies. Use Go's built-in `testing` package.
-*   **Proof of Concept:** See `backend-go/internal/application/service_test.go`.
-*   **Goal:** 80%+ test coverage for Core Domain logic.
+*   **Methodology:** Test pure logic without DB dependencies, using Go's built-in `testing` package with table-driven subtests.
+*   **Scope (all four Go microservices):**
+    *   `services/recommendation` — ranking strategies (engagement/chronological), scoring, config, strategy factory.
+    *   `services/gateway` — JWT issue/validate, tampered/expired/malformed token rejection, auth middleware.
+    *   `services/user` — `categoryFromMetadata` profile-tag aggregation + malformed-body rejection.
+    *   `services/content` — health contract + `Video` JSON field contract.
+*   **Proof:** CI job *3) Unit Tests - Report Artifact* runs `go test -v` across every `services/*/go.mod`, builds `unit-test-report.md` (total / passed / failed / pass-rate) and uploads it as an artifact. Currently **42** cases (incl. subtests).
+*   **Run locally:** `cd tiktok-glocal-ecommerce-recsys-mvp/services/<svc> && go test -v ./...`
 
 ## 2. Integration Testing
-*   **Methodology:** Use `testcontainers-go` or Docker Compose to spin up Redis/Postgres in ephemeral containers.
-*   **Test Case:** Verify that a profile updated in Postgres correctly reflects in the Recommendation response.
+*   **Methodology:** Docker Compose spins up the full stack (gateway → recommendation → user/content → Postgres/Redis) in CI job *5) Microservice Integration Tests*.
+*   **Test cases:** `tests/integration/gateway.integration.mjs` verifies cross-service behavior — per-user recommendation differentiation, config read/write persistence, JWT-gated PUT (401 without token), deployment-history persistence, health aggregation.
+*   **Run locally:** `cd tiktok-glocal-ecommerce-recsys-mvp && docker compose up -d`, then `BASE=http://localhost:8080 npm run test:integration`.
 
 ## 3. Stress Testing (Performance Defense)
-*   **Tool:** `k6` or `Vegeta`.
-*   **Scenario:** 1000 Concurrent Users fetching recommendations simultaneously.
-*   **Expectations:**
-    *   P99 Latency < 50ms.
-    *   Throughput > 500 RPS on a single microservice instance.
+*   **Tool:** **Apache JMeter** — plan at `tests/stress/recommend.jmx`. A lightweight Node gate (`tests/stress/recommend.load.mjs`) also runs inside CI so the pipeline enforces an error-rate threshold without needing a JMeter/Java install on the runner.
+*   **Scenario:** ramp to 50 virtual users hammering `GET /api/v1/recommendations` across multiple user_ids; assert HTTP 200 + non-empty `data.videos`.
+*   **How to run JMeter + capture evidence:** see `tests/stress/README.md`.
+*   **Expectations:** error rate < 5%; throughput and P99 recorded in `tests/stress/RESULTS.md` (latest local node run: 1803 req/s, 0 errors, P99 ≈ 100ms).
 
 ## 4. Security Testing
-*   **Static Analysis:** Use `gosec` for Go and `npm audit` for React to find vulnerabilities in dependencies.
-*   **RBAC Proof:** Attempt to post new weights without an Admin JWT; verify `403 Forbidden` response.
+*   **Static Analysis:** `gosec` / `golangci-lint` / `govulncheck` for Go (CI job 1, advisory report artifact) and `npm audit --audit-level=high` for the frontend (CI job 2, hard gate — currently 0 vulnerabilities).
+*   **RBAC Proof:** PUT `/api/v1/configs` without an admin JWT returns **401 Unauthorized** (covered by the integration suite).

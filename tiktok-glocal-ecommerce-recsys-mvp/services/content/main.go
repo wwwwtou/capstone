@@ -27,10 +27,7 @@ func main() {
 	db.SetConnMaxLifetime(time.Minute * 3)
 
 	r := mux.NewRouter()
-	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","service":"content"}`))
-	}).Methods("GET")
+	r.HandleFunc("/healthz", healthHandler).Methods("GET")
 	r.HandleFunc("/internal/content/candidates", handleCandidates).Methods("GET")
 
 	port := os.Getenv("PORT")
@@ -40,6 +37,11 @@ func main() {
 	addr := ":" + port
 	log.Println("Content service listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, r))
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok","service":"content"}`))
 }
 
 type Video struct {

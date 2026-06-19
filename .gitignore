@@ -10,3 +10,8 @@ coverage/
 # Compiled Go service binaries (built inside Docker; never commit)
 *.exe
 go-test.tmp.log
+
+# JMeter raw run output (commit screenshots/RESULTS.md, not these)
+tests/stress/jmeter-results.jtl
+tests/stress/jmeter-report/
+tests/stress/jmeter-console.log

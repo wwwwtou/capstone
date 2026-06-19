@@ -66,6 +66,22 @@ type Interaction struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 }
 
+// categoryFromMetadata parses a single interaction metadata blob and returns its
+// category tag. It returns ok=false when the blob is invalid JSON, has no
+// category, or the category is not a non-empty string. Profile aggregation in
+// handleProfile relies on this to weight a user's interests.
+func categoryFromMetadata(meta []byte) (string, bool) {
+	var m map[string]interface{}
+	if err := json.Unmarshal(meta, &m); err != nil {
+		return "", false
+	}
+	cat, ok := m["category"].(string)
+	if !ok || cat == "" {
+		return "", false
+	}
+	return cat, true
+}
+
 func handleInteraction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
@@ -111,9 +127,7 @@ func handleProfile(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&event, &meta); err != nil {
 			continue
 		}
-		var m map[string]interface{}
-		_ = json.Unmarshal(meta, &m)
-		if cat, ok := m["category"].(string); ok {
+		if cat, ok := categoryFromMetadata(meta); ok {
 			tags[cat]++
 		}
 	}
