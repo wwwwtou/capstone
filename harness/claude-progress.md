@@ -88,3 +88,22 @@
   - **git push 凭据**：本机有两份 Windows 凭据——`git:https://github.com`(user wlyIris，对本仓库**无**推送权→403) 与 `git:https://wwwwtou@github.com`(user wwwwtou，**有**权)。GCM(helper=manager) 在非交互 shell 会弹 GUI 卡住。已把本仓库 remote 改为 `https://wwwwtou@github.com/...` 并设 `credential.helper=wincred`(local)，今后 `git push origin main` 可非交互直推。
   - run #18 结果待确认(见 session-handoff)。
 - 下一步最佳动作：确认 run #18 全绿(deploy-render 作业在无 DEPLOY_HOOK_URL secret 时会自跳过并成功)；绿则方案B 1-4 步 + 测试 + CI 全部闭环完成。
+
+### Session 006
+
+- 日期：2026-06-19
+- 本轮目标：回应用户两点质疑——(1) 单测只有 26 个、口径不全；(2) 压测改用本机 JMeter 并出可截图证据。
+- 已完成（单测）：
+  - 诊断：CI 的「单测报告」作业(job 3)原来只 `cd recommendation` 跑一个服务→报告只统计 26；gateway 5 个没计入，content/user 0 测试。
+  - 给 user 服务抽出纯函数 `categoryFromMetadata` 并补测试(7 子用例 + 坏 body→400，共 9)；给 content 抽 `healthHandler` 并补测试(健康契约 + Video JSON 字段契约，共 2)。
+  - 改 ci.yml job 3：遍历所有 `services/*/go.mod` 跑 `go test -v`，合并日志，新增 `MODULE_FAILED:` 哨兵 + step6 gate 同时识别 `^--- FAIL:|^MODULE_FAILED:`；报告 scope 改为「全部 Go 微服务」。本地模拟统计=42 通过/0 失败(26+5+9+2)。
+- 已完成（压测）：
+  - 用户本机有 JMeter（`D:\wwtDownload\webserver\apache-jmeter-5.6.3\...\bin\jmeter.bat`，5.6.3，Java 8）。删除从未实跑的 k6 脚本，新增 `tests/stress/recommend.jmx` + `users.csv`(CSV Data Set 取 user_id) + `README.md`(GUI/headless 两种跑法+截图指引)。
+  - 真实跑通(stack 已 up 10h，gateway :8080 全链路)：50 线程/10s ramp/30s/80ms think → **12841 样本，0 错误，430 req/s，mean 9.2ms，p90/p95/p99=19/25/38ms，max 79ms**，全 200。HTML dashboard 在 `tests/stress/jmeter-report/index.html`(gitignored)。结果写入 RESULTS.md。
+  - 踩坑记录(已解决)：`${__chooseRandom}` 不被求值→改 CSV；无 keepalive 复用导致 Windows 端口耗尽(SocketException/BindException 占 45%)→钉 HttpClient4 + think time；jmeter.bat 对 `-Jhost=127.0.0.1` 报 `Unknown arg: .0.0.1`→用 `localhost`；PowerShell `Out-File`/`*>` 产 UTF-16 日志，grep 当二进制→改读 statistics.json。
+  - CI 压测门禁仍用轻量 node 脚本(无需在 runner 装 JMeter/Java)，JMeter 作为本地正式证据工具；TESTING_STRATEGY.md 已据实重写。
+- 运行过的验证：4 服务 gofmt 干净 + go vet + go test 全过；本地模拟 CI 报告逻辑=42/42/0；JMeter 实跑 0 错误。提交 `0e0f3ae` 并 push→触发 CI run #20(进行中)。
+- 提交记录：`0e0f3ae`（已 push，非交互 wincred 直推成功）。当前 HEAD==origin/main==0e0f3ae。
+- 更新过的文件或工件：services/{user,content}/main.go + 新 main_test.go；.github/workflows/ci.yml；tests/stress/{recommend.jmx,users.csv,README.md,RESULTS.md}（删 recommend.k6.js）；TESTING_STRATEGY.md；.gitignore。
+- 已知风险或未解决问题：CI run #20 结果待确认（job3 应显示 42 用例、job5 集成仍应绿）。
+- 下一步最佳动作：确认 run #20 全绿；若用户要 JMeter 浏览器截图，打开 `tests/stress/jmeter-report/index.html` 截 Statistics 表 + 图。

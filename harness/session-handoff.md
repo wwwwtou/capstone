@@ -1,6 +1,15 @@
 # 会话交接
 
-## 当前状态（截至 2026-06-19，Session 005 结束）
+## 当前状态（截至 2026-06-19，Session 006 结束）
+
+**方案B 全流程闭环 + 测试加强（单测全服务覆盖、压测改 JMeter），CI run #20 全绿（HEAD==origin/main==`0e0f3ae`）。**
+
+- Session 006 增量：单测从「只 recommendation 26 个」扩到「全部 4 个 Go 服务 42 个」(CI job3 现遍历 `services/*/go.mod`)；压测从未实跑的 k6 换成本机 **JMeter**(`tests/stress/recommend.jmx`+`users.csv`+`README.md`)，并真实跑通：50 线程/30s/80ms think → 12841 样本 0 错误、430 req/s、p99 38ms，HTML dashboard 在 `tests/stress/jmeter-report/index.html`(gitignored，要截图就开这个)。CI 压测门禁仍用轻量 node 脚本。详见 claude-progress.md Session 006（含 JMeter 踩坑：CSV 取参、HttpClient4 keepalive 避免 Windows 端口耗尽、`-Jhost` 用 localhost 而非 127.0.0.1）。
+- 本机 JMeter：`D:\wwtDownload\webserver\apache-jmeter-5.6.3\apache-jmeter-5.6.3\bin\jmeter.bat`（5.6.3，Java 8）。headless 跑法：`jmeter -n -t tests\stress\recommend.jmx -Jhost=localhost -Jport=8080 -Jthreads=50 -Jrampup=10 -Jduration=30 -Jthink=80 -l tests\stress\jmeter-results.jtl -e -o tests\stress\jmeter-report`。
+
+---
+
+## 历史状态（截至 Session 005 结束）
 
 **方案B 全流程闭环完成，CI 全绿。**
 
