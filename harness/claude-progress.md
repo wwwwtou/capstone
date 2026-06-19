@@ -107,3 +107,22 @@
 - 更新过的文件或工件：services/{user,content}/main.go + 新 main_test.go；.github/workflows/ci.yml；tests/stress/{recommend.jmx,users.csv,README.md,RESULTS.md}（删 recommend.k6.js）；TESTING_STRATEGY.md；.gitignore。
 - 已知风险或未解决问题：CI run #20 结果待确认（job3 应显示 42 用例、job5 集成仍应绿）。
 - 下一步最佳动作：确认 run #20 全绿；若用户要 JMeter 浏览器截图，打开 `tests/stress/jmeter-report/index.html` 截 Statistics 表 + 图。
+
+### Session 007
+
+- 日期：2026-06-19
+- 本轮目标：按技术清单补两块——(1) 容错机制(增值项 + 限流)，(2) 架构图对齐(PlantUML，统一路径)。
+- 已完成（容错，纯 stdlib 无新依赖）：
+  - recommendation：新增 `resilience.go`(三态断路器 closed/open/half-open + 退避重试 callResilient)；fetchProfile/fetchCandidates 包进 breaker+retry；handleRecommend 加优雅降级——user 画像拿不到→冷启动空画像(globally_trending)+`degraded:true` 仍 200，content 拿不到→503。
+  - gateway：新增 `resilience.go`(断路器 + breakerTransport 包 ReverseProxy.Transport，5xx/传输错误计失败，开路→ErrorHandler 返 503) + `ratelimit.go`(per-IP 令牌桶中间件→429+Retry-After，默认 1000rps/2000burst 不影响压测/CI，可 env 调)。
+  - 单测 42→53（recommendation +5 断路器/重试，gateway +6 限流/breakerTransport）。
+  - 真栈验证：rebuild gateway+recommendation→集成 14/14；**故障注入**：`docker compose stop user`→推荐仍 200 degraded=true 冷启动兜底(非 502)；user 恢复→断路器冷却后 half-open 探测→闭合→恢复个性化(interest_match)。
+- 已完成（架构图，PlantUML，全在 `docs/architecture/`）：
+  - 8 张：logical/physical(docker-compose)/deployment-cloud(Render+AWS terraform)/ddd-context-map/er-diagram(按 3 个 per-service 库分组，列/类型/PK/索引/unique + Redis kv + 应用层无 FK 跨服务关系)/sequence(GET recommendations 含限流/断路器/冷启动降级)/cicd-pipeline(6 作业)/usecase。
+  - 用本机 plantuml.jar(VSCode 扩展) + Graphviz 渲染出 PNG(`docs/architecture/png/`)，已视觉核对 ER/sequence/logical 正确。源文件改为纯 ASCII(em-dash→`-`，避免 GBK mojibake；par/and 老 jar 不稳→用 note 表达并发)。
+  - PRD_ARCHITECTURE.md 顶部加指引，注明旧 Mermaid 为历史/aspirational。
+- 运行过的验证：4 服务 gofmt+vet+test 全过(53)；集成 14/14；故障注入端到端；CI run #23(dfcc556) 6 作业全绿；PlantUML 渲染 0 报错。
+- 提交记录：dfcc556(容错)、613c687(架构图)，均已 push；HEAD==origin/main==613c687。
+- 更新过的文件或工件：services/recommendation/{resilience.go,resilience_test.go,main.go}、services/gateway/{resilience.go,resilience_test.go,ratelimit.go,ratelimit_test.go,main.go}；docs/architecture/*(8 puml+8 png+README)；PRD_ARCHITECTURE.md。
+- 已知风险/未解决：技术清单仍缺的项见 session-handoff（E2E 自动化、DDD 分层落地代码、SonarQube、JWT secret 硬编码、敏感数据加密等）。
+- 下一步最佳动作：按用户优先级继续补 E2E(Playwright) 或 DDD 分层重构等。

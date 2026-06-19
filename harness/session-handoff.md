@@ -1,6 +1,16 @@
 # 会话交接
 
-## 当前状态（截至 2026-06-19，Session 006 结束）
+## 当前状态（截至 2026-06-19，Session 007 结束）
+
+**新增：容错机制(断路器+重试+限流) + PlantUML 架构图对齐，CI run #23 全绿，HEAD==origin/main==`613c687`。**
+
+- 容错(纯 stdlib)：recommendation 对 user/content 调用加断路器+重试+冷启动降级(`degraded:true`)；gateway 加 per-IP 限流(429) + 反代断路器(503)。单测 42→53。真栈故障注入验证通过(stop user→200 兜底→恢复)。
+- 架构图：`docs/architecture/` 下 8 张 PlantUML(源 .puml + 渲染 png)：logical/physical/deployment-cloud/ddd-context-map/er-diagram(详细，按 per-service 库分组)/sequence/cicd/usecase。本机渲染器：plantuml.jar=`C:\Users\Lenovo\.vscode\extensions\jebbs.plantuml-2.18.1\plantuml.jar`，Graphviz=`D:\wwtDownload\Graphviz\bin\dot.exe`。渲染命令见 docs/architecture/README.md。
+- 技术清单仍缺(按性价比，下次可继续)：①E2E 自动化(Playwright，唯一缺的测试维度)；②DDD 分层落地到代码(目前服务多为扁平 main.go，class 图的 repository 接口未在代码实现)；③SonarQube(现用 gosec/golangci/govulncheck/npm audit 替代)；④JWT secret 去硬编码 fallback、加安全头、敏感数据加密；⑤水平扩展/负载均衡的具体配置。增值项(第7条)已通过容错机制满足。
+
+---
+
+## 历史状态（截至 Session 006 结束）
 
 **方案B 全流程闭环 + 测试加强（单测全服务覆盖、压测改 JMeter），CI run #20 全绿（HEAD==origin/main==`0e0f3ae`）。**
 
