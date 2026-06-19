@@ -16,3 +16,9 @@ tests/stress/jmeter-results.jtl
 tests/stress/jmeter-report/
 tests/stress/jmeter-console.log
 jmeter.log
+
+# Playwright E2E artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/
