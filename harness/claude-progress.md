@@ -4,9 +4,10 @@
 
 - 仓库根目录：D:\nus\intern\new\e-commerce-video-recsys-mvp
 - 标准启动路径：`./harness/init.sh`（或 `npm run dev`）
-- 标准验证路径：`npm run lint`（tsc --noEmit）
-- 当前最高优先级未完成功能：dash-001（系统健康与微服务拓扑展示）
+- 标准验证路径：`npm run lint` + `npm run test:smoke`(18) + `npm run test:e2e`(10)；真栈另跑 integration(22)
+- 当前最高优先级未完成功能：无（feed-001 / obs-001 / traffic-001 已 passing，见 Session 009）
 - 当前 blocker：无
+- 本机注意：host 8080 常被 sfs2x-service 占用，全栈联调用 `GATEWAY_HOST_PORT=18080`（8090 在 Windows 保留端口段内会绑定失败）
 
 ## 会话记录
 
@@ -147,3 +148,32 @@
 - 运行过的验证：4 服务 gofmt+vet+test 全过(57)；rebuild recommendation 镜像→集成 14/14；E2E 本地 4/4；PlantUML 渲染 0 报错。提交 `3ebeb09`(E2E)、`fcd54c5`(重构)，已 push。
 - 已知风险/未解决：CI run(fcd54c5)结果待确认(unit 应 57、e2e 作业、集成均应绿)。技术清单剩余：SonarQube(有替代)、JWT secret 硬编码 fallback、敏感数据加密、负载均衡具体配置。
 - 下一步最佳动作：确认 CI 全绿；四测试维度已齐，DDD 已落地代码。
+
+### Session 009
+
+- 日期：2026-07-15
+- 本轮目标：扩充 demo 体量——(1) 消费者端 TikTok 风格视频流页面（交互→画像→推荐闭环），(2) 全链路可观测性（指标+追踪+监控页），(3) 一键演示流量（持续流量开关 + burst 压测波）。
+- 已完成（Go 可观测性，纯 stdlib）：
+  - 四服务统一 `metrics.go` 注册表：请求计数(总/状态类/路由)、固定桶延迟直方图(p50/p90/p99 估计)、命名计数器、惰性字符串 gauge；每服务暴露 `/metrics`(Prometheus 文本) + `/metricsz`(JSON)。
+  - gateway 新增 `GET /api/v1/metrics` 聚合端点（自身快照 + 抓取三个下游 /metricsz，不可达→null→UI 显示 DOWN）；断路器状态导出为 gauge；429 计入 rate_limited_total。
+  - user 服务 Redis 缓存 cache_hits/cache_misses 计数；recommendation 断路器状态经 BreakerState() 导出。
+  - X-Request-ID 中间件全链路：edge 生成→gateway→rec(经 context 注入 outbound 调用)→user/content；rec 响应 trace_id 用真实请求 id；gateway ModifyResponse 去重下游回显。
+  - **修复存量 bug**：gateway 代理 user/content 时错误剥离路径前缀（下游注册的是全路径），`POST /api/v1/users/{id}/interactions` 与 `/internal/users/{id}/profile` 经网关一直 404——此前无测试覆盖该链路。改为不剥前缀 + 集成测试固化。
+- 已完成（BFF/server.ts 重写）：
+  - mock 模式升级为完整内存推荐引擎：10 视频目录 + 种子互动 + 画像聚合 + TTL 60s 画像缓存(带命中计数、写失效) + engagement/chronological 策略（与 Go 逐行一致），闭环在 Render 单服务部署上同样成立。
+  - 双模式通用：BFF 自身指标注册表 + `/api/v1/metrics`(mock 形状与 gateway 聚合一致)；`GET /api/v1/users/:id/profile` BFF 路由(代理模式转 gateway /internal)。
+  - 流量发生器（服务端循环，翻页不中断）：`POST/GET /api/v1/simulator/traffic`(1-50 rps 混合流量)、`POST /api/v1/simulator/burst`(默认 300 req@25 并发，返回 achieved_rps/p50/p99 迷你压测报告)。
+- 已完成（前端，5 个页面）：
+  - `src/pages/Feed.tsx`：手机框竖屏视频流(滚轮/方向键/按钮翻页、分类渐变海报)、点赞/自动观看事件、实时兴趣画像面板(动画条形)、事件日志、persona 切换、Re-rank Feed 按钮。
+  - `src/pages/Monitoring.tsx`：2s 轮询聚合指标，计数器差分算 QPS/错误率(Prometheus 方式)，自绘 SVG 图表(零新依赖)：吞吐、p50/p99、错误率、缓存命中率、断路器徽章、每服务状态表。
+  - `src/components/TrafficControls.tsx`：一键 Start/Stop Traffic + rps 滑杆 + Burst 300 按钮(结果内联展示)，嵌入 Monitoring 和 Simulator 两页。
+- 运行过的验证：
+  - 四服务 gofmt+vet+test 全绿，单测 57→**66**(gateway+6 metrics、rec infra+3 tracing/breaker)。
+  - smoke 9→**18**（新增闭环、metrics 形状、trace 回显、traffic/burst）全过；`npm run lint`+`vite build` 过。
+  - E2E 4→**10**（admin-flows 修两处脆断言：真实指标后 "1250 RPS"→正则、mock 升级后 "Top Tech 2026"→"Wireless Earbuds Deep Dive"+interest_match:electronics；新增 feed.spec 3 条 + monitoring.spec 3 条）全过。
+  - 集成 14→**22**：本机 Docker 真栈实跑 22/22（gateway 走 18080）。
+  - 代理模式全链路手工验证：BFF profile 路由、metrics 聚合(真实 Redis 命中数)、交互写库、burst 374rps/p99 79ms/0 错误。
+  - **故障注入复验（新监控视角）**：stop user → 推荐 200+degraded:true、聚合指标 user=null(DOWN)、rec breaker_user=open；start user → 断路器自动闭合、恢复 UP。
+- 更新过的文件或工件：services/{gateway,user,content}/metrics.go(+gateway metrics_test.go)、rec internal/infra/{metrics.go,metrics_test.go,httprepo.go}、rec main.go/transport/handler.go、gateway main.go；server.ts(重写)；src/{App.tsx,services/api.ts,pages/{Feed,Monitoring}.tsx,components/TrafficControls.tsx,pages/Simulator.tsx}；tests/{smoke,integration,e2e/*}；docs/TECHNICAL_DOSSIER.md(新 §7 Observability+§2.3 闭环+计数刷新)；README.md。
+- 已知风险/未解决：架构图未画入新端点/页面(dossier §14 已记)；本机 8080 被 sfs2x 占用(用 GATEWAY_HOST_PORT=18080)；CI run 结果待确认。
+- 下一步最佳动作：确认 CI 全绿；演示脚本：开 Monitoring 页→Start Traffic→图表动起来→Burst→切 Feed 页做点赞闭环→(可选)docker stop user 看断路器变红。

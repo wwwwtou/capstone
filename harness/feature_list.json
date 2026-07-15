@@ -1,6 +1,6 @@
 {
   "project": "TikTok Glocal Ecommerce Recommendation Architecture (Proxy MVP)",
-  "last_updated": "2026-06-18",
+  "last_updated": "2026-07-15",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -74,6 +74,56 @@
       ],
       "evidence": [],
       "notes": "依赖后端 GET /api/v1/recommendations (server.ts)。"
+    },
+    {
+      "id": "feed-001",
+      "priority": 5,
+      "area": "consumer-feed",
+      "title": "消费者端 For You 视频流（交互→画像→推荐闭环）",
+      "user_visible_behavior": "用户在 For You Feed 页滑动浏览推荐视频卡片；观看/点赞事件实时写入用户画像（兴趣面板即时更新）；点击 Re-rank Feed 后推荐顺序与 reason 徽章随画像变化。",
+      "status": "passing",
+      "verification": [
+        "npm run test:e2e 中 feed.spec.ts 3 条用例（渲染、点赞更新画像、re-rank）。",
+        "smoke: interactions POST→204、profile 聚合、ranking 随画像变化（interest_match:travel）。",
+        "集成: interactions POST 经 gateway 全链路 204（修复了网关剥前缀导致 404 的存量 bug）。"
+      ],
+      "evidence": [
+        "Session 009: E2E 10/10、smoke 18/18、integration 22/22 全绿；代理模式手工验证 user_e2e 点赞 fitness 后画像 {fitness:1}（Postgres 落库）。"
+      ],
+      "notes": "mock 与全栈双模式行为一致；src/pages/Feed.tsx + server.ts 内存引擎 + gateway 路由修复。"
+    },
+    {
+      "id": "obs-001",
+      "priority": 6,
+      "area": "observability",
+      "title": "全链路可观测性（指标、追踪、Live Monitoring 页）",
+      "user_visible_behavior": "Live Monitoring 页实时显示吞吐、p50/p99 延迟、错误率、Redis 缓存命中率、各服务断路器状态与每服务指标表；故障注入时断路器徽章变 OPEN、服务行变 DOWN。",
+      "status": "passing",
+      "verification": [
+        "四服务 /metrics(Prometheus)+/metricsz(JSON)；gateway /api/v1/metrics 聚合。",
+        "X-Request-ID 全链路传播并作为 trace_id 返回。",
+        "npm run test:e2e monitoring.spec.ts；集成测试 8 条新断言。"
+      ],
+      "evidence": [
+        "Session 009: gateway 单测+6、rec infra+3；集成 22/22（含 prometheus 文本、breaker closed、cache_hits≥1、trace 回显）；故障注入实测 breaker_user open→closed。"
+      ],
+      "notes": "纯 stdlib 实现（无 Prometheus client 依赖）；mock 模式提供同形状聚合。"
+    },
+    {
+      "id": "traffic-001",
+      "priority": 7,
+      "area": "demo-tooling",
+      "title": "一键演示流量（持续负载开关 + Burst 压测波）",
+      "user_visible_behavior": "Monitoring/Simulator 页一键 Start Traffic（1-50 rps 服务端持续混合流量，翻页不中断）与 Burst 300（返回 achieved rps/p50/p99 迷你压测报告，内联展示）。",
+      "status": "passing",
+      "verification": [
+        "smoke: traffic status + burst 20 req 零错误。",
+        "E2E monitoring.spec.ts: burst 出报告、toggle 后 sent 计数增长。"
+      ],
+      "evidence": [
+        "Session 009: mock 模式 burst 100req 724rps/p99 37ms/0err；代理模式全链路 burst 374rps/p99 79ms/0err；E2E 全绿。"
+      ],
+      "notes": "server.ts BFF 内置（POST /api/v1/simulator/{traffic,burst}），双模式可用。"
     }
   ]
 }

@@ -3,18 +3,20 @@
 > Single source of technical detail for the project report / defense PPT.
 > Everything below reflects the **actual code** in this repository (verified via
 > tests + CI, not aspirational). Diagrams live in [`docs/architecture/`](architecture/).
-> Last updated: 2026-06-19 (HEAD `935c277`).
+> Last updated: 2026-07-15 (observability + consumer feed release).
 
 ---
 
 ## 1. Executive Summary
 
-A microservices recommendation platform: a React admin dashboard talks to a Go
-API gateway that fronts three Go domain services (recommendation, user, content)
-backed by per-service PostgreSQL databases and a Redis profile cache. The system
-demonstrates DDD/clean architecture, fault tolerance (circuit breaker + retry +
-rate limiting), a full four-dimension test suite, and an automated GitHub Actions
-CI/CD pipeline that deploys to Render.
+A microservices recommendation platform: a React dashboard (admin pages + a
+consumer-side TikTok-style feed) talks to a Go API gateway that fronts three Go
+domain services (recommendation, user, content) backed by per-service PostgreSQL
+databases and a Redis profile cache. The system demonstrates DDD/clean
+architecture, fault tolerance (circuit breaker + retry + rate limiting), a
+full observability stack (per-service metrics, request tracing, live monitoring
+UI, built-in load generator), a four-dimension test suite, and an automated
+GitHub Actions CI/CD pipeline that deploys to Render.
 
 - **Languages:** Go (services), TypeScript/React (frontend + BFF), SQL.
 - **Infra:** Docker Compose (local/self-host), Render (cloud), Terraform/AWS (IaC option).
@@ -42,11 +44,14 @@ Authoritative PlantUML diagrams (source `.puml` + rendered `png/`) in
 
 ### 2.1 Layers (logical)
 
-1. **Presentation** — React SPA (Vite): `DashboardHome`, `AlgoConfig`, `Simulator`
-   (`src/pages/*`, `src/App.tsx`).
+1. **Presentation** — React SPA (Vite), 5 pages: `DashboardHome`, `Feed`
+   (consumer-side video feed), `Monitoring` (live observability), `AlgoConfig`,
+   `Simulator` (`src/pages/*`, `src/App.tsx`).
 2. **Edge / BFF** — Node `server.ts` (Express). Dual-mode: serves an in-memory
-   **mock** API (online single-service / demo) or **reverse-proxies** `/api/v1/*`
-   to the gateway when `GATEWAY_URL` is set (full-stack).
+   **mock replica** of the microservice behavior (catalog + interactions +
+   profile-driven ranking; online single-service / demo) or **reverse-proxies**
+   `/api/v1/*` to the gateway when `GATEWAY_URL` is set (full-stack). In both
+   modes the BFF measures its own traffic and hosts the demo traffic generator.
 3. **API Gateway (Go)** — `services/gateway`: routing/reverse-proxy, JWT auth,
    per-IP rate limiting, per-downstream circuit breaker, health aggregation.
 4. **Domain services (Go)** — recommendation (core), user, content.
@@ -56,10 +61,25 @@ Authoritative PlantUML diagrams (source `.puml` + rendered `png/`) in
 
 | Service | Port | Responsibility | Key endpoints |
 |---|---|---|---|
-| gateway | 8080 | Edge: auth, rate limit, breaker, health, routing | `/api/v1/login`, `/api/v1/health`, proxies `/api/v1/*` |
+| gateway | 8080 | Edge: auth, rate limit, breaker, health, routing, metrics aggregation | `/api/v1/login`, `/api/v1/health`, `/api/v1/metrics` (aggregate), proxies `/api/v1/*` |
 | recommendation | 8083 | Core ranking; config; deployment history | `GET /api/v1/recommendations`, `GET/PUT /api/v1/configs`, `GET /api/v1/configs/history` |
 | user | 8081 | Interactions + profile aggregation | `POST /api/v1/users/{id}/interactions`, `GET /internal/users/{id}/profile` |
 | content | 8082 | Video catalog / candidates | `GET /internal/content/candidates` |
+
+Every Go service additionally exposes `/metrics` (Prometheus text) and
+`/metricsz` (JSON snapshot) — see §7.
+
+### 2.3 Consumer feed — the closed loop
+
+`src/pages/Feed.tsx` is the consumer-side view of the system: a vertical
+TikTok-style feed rendering the ranked recommendations. Watching a card fires an
+implicit `view` event and liking fires a `like` event
+(`POST /api/v1/users/{id}/interactions`); the user service persists the
+interaction and **invalidates the Redis profile cache**, so "Re-rank Feed"
+refetches `/api/v1/recommendations` with the updated interest profile — the
+ranking and `reason` badges visibly change. A BFF route
+(`GET /api/v1/users/{id}/profile`) surfaces the live interest tags next to the
+feed. The loop works identically in mock and full-stack modes.
 
 ---
 
@@ -143,7 +163,62 @@ machine, retry fail-fast, breaker transport, rate limiter, and the degraded use 
 
 ---
 
-## 7. Security
+## 7. Observability & Monitoring (Technical Added Value #2)
+
+Standard-library instrumentation across every service, one aggregated feed, a
+live monitoring UI, and a built-in demo load generator.
+
+### 7.1 Metrics pipeline
+
+- Every Go service (and the BFF) embeds the same in-process registry
+  (`metrics.go` / `internal/infra/metrics.go`): request counters (total, per
+  status class, per collapsed route), a fixed-bucket latency histogram with
+  p50/p90/p99 estimation, named app counters, and lazily-read string gauges.
+- Per-service endpoints: `/metrics` (**Prometheus text exposition format**,
+  scrape-ready) and `/metricsz` (JSON snapshot).
+- `GET /api/v1/metrics` on the gateway aggregates its own snapshot plus every
+  downstream `/metricsz` (a `null` entry renders as DOWN in the UI). The BFF
+  mock mode serves the same document shape from its in-memory replica, so the
+  monitoring UI works on the single-service deploy too.
+- Domain signals: user service counts Redis `cache_hits`/`cache_misses`; the
+  gateway counts `rate_limited_total` (429s); circuit-breaker states are
+  exported as gauges (gateway per-downstream + the recommendation service's
+  outbound breakers).
+
+### 7.2 Request tracing
+
+`X-Request-ID` middleware at every hop: assigned at the edge if absent,
+propagated gateway → recommendation → user/content (carried through the
+clean-architecture layers in `context.Context`, injected on outbound repository
+calls), echoed on every response, and returned by the recommendation service as
+the response `trace_id`. One id identifies a request across all service logs.
+
+### 7.3 Live monitoring UI
+
+`src/pages/Monitoring.tsx` polls `/api/v1/metrics` every 2 s; QPS and error
+rate are computed from counter deltas between samples (the Prometheus way) and
+rendered with dependency-free SVG charts. Panels: edge throughput, p50/p99
+latency, error rate, Redis cache hit rate, circuit-breaker badges, per-service
+status table. **Fault-injection verified:** `docker compose stop user` → the
+dashboard shows `breaker_user: OPEN`, the user row DOWN, and recommendations
+continue serving `degraded:true`; after `docker compose start user` the breaker
+closes and the row returns to UP.
+
+### 7.4 Demo traffic generator (BFF-hosted)
+
+- `POST/GET /api/v1/simulator/traffic` — continuous mixed synthetic load
+  (recommendations / interactions / profile / config reads) at 1–50 rps,
+  running **server-side** so it survives page navigation.
+- `POST /api/v1/simulator/burst` — a measured wave (default 300 requests @ 25
+  concurrent) whose response is a mini load-test report (achieved rps,
+  p50/p99). Measured through the full chain in proxy mode: ~375 rps, p99
+  ≈ 79 ms, 0 errors on the dev machine.
+- One-click controls on the Monitoring and Simulator pages; synthetic traffic
+  + real measurement is the standard staging-environment demo pattern.
+
+---
+
+## 8. Security
 
 | Control | Status | Detail |
 |---|---|---|
@@ -158,7 +233,7 @@ machine, retry fail-fast, breaker transport, rate limiter, and the degraded use 
 
 ---
 
-## 8. Scalability
+## 9. Scalability
 
 - **Stateless services** — all Go services are stateless; user state lives in
   Postgres/Redis, so services scale horizontally behind a load balancer.
@@ -169,15 +244,15 @@ machine, retry fail-fast, breaker transport, rate limiter, and the degraded use 
 
 ---
 
-## 9. Testing — Four Dimensions
+## 10. Testing — Four Dimensions
 
 | Dimension | Count | Location | Run | CI job / evidence |
 |---|---|---|---|---|
-| **Unit** | 57 | `services/*/**/*_test.go` (recommendation 35, gateway 11, user 9, content 2) | `cd services/<svc> && go test ./...` | Job 3 → artifact `unit-test-report.md` |
-| **Integration** | 14 | `tests/integration/gateway.integration.mjs` | `BASE=http://localhost:8080 npm run test:integration` (stack up) | Job 5 (spins up real stack) |
-| **E2E** | 4 | `tests/e2e/admin-flows.spec.ts` (Playwright) | `npm run test:e2e` → `npx playwright show-report` | Job 6 → artifact `playwright-report/` |
-| **Load / Stress** | — | `tests/stress/recommend.jmx` (JMeter) + `recommend.load.mjs` (Node CI gate) | JMeter: see `tests/stress/README.md`; Node: `npm run test:stress` | Job 5 runs the Node gate; JMeter report `tests/stress/jmeter-report/index.html` |
-| (Smoke) | 9 | `tests/smoke/server.smoke.mjs` | `npm run test:smoke` | Job 4 |
+| **Unit** | 66 | `services/*/**/*_test.go` (recommendation 38, gateway 17, user 9, content 2) | `cd services/<svc> && go test ./...` | Job 3 → artifact `unit-test-report.md` |
+| **Integration** | 22 | `tests/integration/gateway.integration.mjs` | `BASE=http://localhost:8080 npm run test:integration` (stack up) | Job 5 (spins up real stack) |
+| **E2E** | 10 | `tests/e2e/{admin-flows,feed,monitoring}.spec.ts` (Playwright) | `npm run test:e2e` → `npx playwright show-report` | Job 6 → artifact `playwright-report/` |
+| **Load / Stress** | — | `tests/stress/recommend.jmx` (JMeter) + `recommend.load.mjs` (Node CI gate) + one-click burst (§7.4) | JMeter: see `tests/stress/README.md`; Node: `npm run test:stress` | Job 5 runs the Node gate; JMeter report `tests/stress/jmeter-report/index.html` |
+| (Smoke) | 18 | `tests/smoke/server.smoke.mjs` | `npm run test:smoke` | Job 4 |
 
 **Unit-test highlight (DDD payoff):** the recommendation use cases are tested
 with **fake repositories** (`internal/app/service_test.go`) — no DB/HTTP needed —
@@ -193,7 +268,7 @@ content-failure error path.
 
 ---
 
-## 10. CI/CD Pipeline
+## 11. CI/CD Pipeline
 
 GitHub Actions `.github/workflows/ci.yml` — 7 jobs (diagram:
 `docs/architecture/cicd-pipeline.puml`):
@@ -205,7 +280,7 @@ GitHub Actions `.github/workflows/ci.yml` — 7 jobs (diagram:
    machine-readable `unit-test-report.md` (total/passed/failed/pass-rate).
 4. **Lint & Build Checks** — `tsc --noEmit`, `vite build`, API smoke test, docker build.
 5. **Microservice Integration Tests** — `docker compose up --build` → integration
-   (14) + Node load gate → teardown.
+   (22) + Node load gate → teardown.
 6. **End-to-End Tests (Playwright)** — install Chromium, run the UI E2E suite,
    upload `playwright-report`.
 7. **Deploy to Render** — on `main`, after all jobs green; triggers the Render
@@ -213,7 +288,7 @@ GitHub Actions `.github/workflows/ci.yml` — 7 jobs (diagram:
 
 ---
 
-## 11. Deployment
+## 12. Deployment
 
 - **Local / self-host:** `cd tiktok-glocal-ecommerce-recsys-mvp && docker compose up -d`
   (gateway + 3 services + Postgres + Redis); frontend `GATEWAY_URL=http://localhost:8080 npm run dev`.
@@ -225,7 +300,7 @@ GitHub Actions `.github/workflows/ci.yml` — 7 jobs (diagram:
 
 ---
 
-## 12. Requirements Compliance Matrix
+## 13. Requirements Compliance Matrix
 
 Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 
@@ -235,25 +310,26 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 | 1 | Microservices + DDD bounded contexts (in code structure) | ✅ | 4 services, database-per-service; clean arch in recommendation; `ddd-context-map.puml` |
 | 1 | Multi-release / decoupling | 🟡 | HTTP-decoupled services, `/api/v1` versioning; no multi-version coexistence |
 | 2 | Class & sequence design | ✅ | `recommendation-clean-architecture.puml`, `sequence-get-recommendations.puml` |
-| 2 | FE/BE/communication code flow | ✅ | React → BFF → gateway → services → DB/Redis |
+| 2 | FE/BE/communication code flow | ✅ | React → BFF → gateway → services → DB/Redis; consumer feed closes the interaction loop (§2.3) |
 | 2 | Reusable components + design patterns in code | ✅ | Strategy+Factory, Repository/Ports, Gateway, Cache-aside |
 | 3 | Relational schema + indexes | ✅ | `postgres/init.sh`; indexes on user_id, category |
 | 3 | NoSQL structure | ✅ | Redis key-value profile cache |
 | 3 | Data lake / pipeline | ➖ | Not applicable to this MVP |
 | 4 | CI/CD pipeline in repo, with build/scan/test/deploy | ✅ | `.github/workflows/ci.yml` (7 jobs) |
 | 4 | SonarQube specifically | 🟡 | Equivalent static analysis (gosec/golangci/govulncheck/npm audit); SonarQube not wired |
-| 5 | Unit testing | ✅ | 57 cases, all services |
-| 5 | Integration testing | ✅ | 14 cases, real stack in CI |
-| 5 | End-to-end testing | ✅ | 4 Playwright flows |
-| 5 | Stress / performance testing (JMeter) | ✅ | `recommend.jmx`; results in `RESULTS.md` |
+| 5 | Unit testing | ✅ | 66 cases, all services |
+| 5 | Integration testing | ✅ | 22 cases, real stack in CI |
+| 5 | End-to-end testing | ✅ | 10 Playwright flows (admin, consumer feed, monitoring) |
+| 5 | Stress / performance testing (JMeter) | ✅ | `recommend.jmx`; results in `RESULTS.md`; one-click burst in UI |
 | 6 | JWT auth, SQL-injection defense | ✅ | Gateway JWT; parameterized queries |
 | 6 | Encryption at rest / advanced security | 🟡 | Rate limit ✅; JWT secret env-only ✅; encryption-at-rest ❌ (no PII stored) |
 | 6 | Horizontal scaling design | 🟡 | Stateless services ✅; LB/autoscaling documented but not configured |
-| 7 | Technical added value (≥1) | ✅ | **Fault tolerance**: circuit breaker, retry, rate limiting, graceful degradation |
+| 7 | Technical added value (≥1) | ✅ | **Fault tolerance** (§6) + **Observability** (§7): metrics, tracing, live monitoring, traffic generator |
+| 7 | Monitoring / operations tooling | ✅ | Prometheus-format `/metrics`, aggregated `/api/v1/metrics`, live Monitoring UI, X-Request-ID tracing |
 
 ---
 
-## 13. Known Gaps / Future Work
+## 14. Known Gaps / Future Work
 
 1. **SonarQube** integration (current static analysis is equivalent but not Sonar).
 2. **Security headers / CSP**, and **encryption at rest** if real PII is introduced.
@@ -261,14 +337,28 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 4. **Apply clean-architecture layering** to the user/content/gateway services
    (currently flatter than the recommendation service).
 5. **Note:** `@google/genai` is a declared dependency but is **not used** in code —
-   there is no LLM integration; the technical added value is the fault-tolerance layer.
+   there is no LLM integration; the technical added value is fault tolerance + observability.
+6. **Architecture diagrams** predate the observability release: the `/metrics`,
+   `/metricsz`, `/api/v1/metrics` endpoints, the Feed/Monitoring pages, and the
+   BFF traffic generator are documented here (§2.3, §7) but not yet drawn into
+   the PlantUML sources.
+7. **Wire a real Prometheus + Grafana** against the existing `/metrics`
+   endpoints (they already speak the exposition format; only the scrape config
+   is missing).
 
 ---
 
-## 14. Quick Reference
+## 15. Quick Reference
 
 **Ports:** gateway 8080 · user 8081 · content 8082 · recommendation 8083 ·
 Postgres 5432 · Redis 6379 · frontend dev 3000 (E2E uses 3101).
+If host 8080 is occupied, republish with `GATEWAY_HOST_PORT=18080 docker compose up -d gateway`
+and point the frontend at it (`GATEWAY_URL=http://localhost:18080`).
+
+**Observability endpoints:** per service `/metrics` (Prometheus) + `/metricsz`
+(JSON); aggregated `GET /api/v1/metrics`; traffic generator
+`POST /api/v1/simulator/traffic` `{enabled, rps}` / `POST /api/v1/simulator/burst`
+`{count, concurrency}`.
 
 **Common commands:**
 ```bash
