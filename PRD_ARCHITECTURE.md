@@ -1,4 +1,4 @@
-# E-commerce Video Recommendation System (Open-Source MVP)
+# E-commerce Video Recommendation System - Product & Architecture Overview
 ## Architecture Blueprint & Project Defense Documentation
 
 > **Authoritative diagrams live in [`docs/architecture/`](docs/architecture/) (PlantUML, kept in sync with the code).**

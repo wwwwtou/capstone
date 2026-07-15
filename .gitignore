@@ -22,3 +22,7 @@ jmeter.log
 /playwright-report/
 /playwright/.cache/
 /blob-report/
+
+# local workflow files (not part of the deliverable)
+/AGENTS.md
+/harness/

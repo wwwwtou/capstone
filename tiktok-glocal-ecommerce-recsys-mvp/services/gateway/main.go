@@ -156,7 +156,7 @@ func handleHealth(userURL, contentURL, recURL string) http.HandlerFunc {
 		}
 		redisShards := 0
 		if userStatus == "UP" {
-			redisShards = 1 // single Redis instance in this MVP
+			redisShards = 1 // single Redis instance in this deployment
 		}
 
 		// Real throughput measured from gateway traffic since startup.

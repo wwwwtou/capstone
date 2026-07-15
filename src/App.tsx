@@ -128,7 +128,7 @@ export default function App() {
 
         <footer className="mt-20 pt-8 border-t border-slate-900 text-center">
             <p className="text-[10px] text-slate-600 font-bold tracking-widest uppercase">
-              MTech Software Engineering Defense • Project Proxy MVP • 2026
+              MTech Software Engineering • E-commerce Video Recommendation Platform • 2026
             </p>
         </footer>
       </main>

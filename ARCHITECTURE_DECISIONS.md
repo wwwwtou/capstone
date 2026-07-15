@@ -1,4 +1,4 @@
-# Architecture Decision Records (ADR) - RecSys MVP
+# Architecture Decision Records (ADR) - E-commerce Video Recommendation Platform
 
 ## ADR-001: Choice of Language - Golang for Recommendation Service
 *   **Context:** The recommendation engine requires high concurrency and low latency for scoring thousands of candidates.

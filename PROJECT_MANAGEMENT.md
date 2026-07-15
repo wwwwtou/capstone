@@ -1,4 +1,4 @@
-# Project Management & Sprint Records (TikTok Glocal MVP)
+# Project Management & Sprint Records - E-commerce Video Recommendation Platform
 
 ## 1. Project Backlog (Product Level)
 
@@ -27,4 +27,4 @@
 | :--- | :--- | :--- | :--- |
 | **Technical** | Golang GC pauses affecting tail latency. | Medium | Use sync.Pool for high-frequency objects; monitor memory limits in Docker. |
 | **Security** | Insecure API access for Admin Dashboard. | High | Implement JWT with short expiry + RBAC middleware in Go. |
-| **Management**| Scope creep of "Real-time" AI features. | Medium | Strictly follow MVP blueprint; push complex ML features to Phase 3. |
+| **Management**| Scope creep of "Real-time" AI features. | Medium | Strictly follow the release blueprint; defer complex ML features to a later phase. |

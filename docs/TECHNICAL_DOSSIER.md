@@ -252,7 +252,7 @@ closes and the row returns to UP.
 | JWT secret management | ✅ | Read from `JWT_SECRET` env; **no hardcoded secret in source** — generates an ephemeral random secret (with a warning) if unset. Production sets `JWT_SECRET` for stable, multi-instance tokens. |
 | Rate limiting / abuse cap | ✅ | Per-IP token bucket at the gateway (see §6). |
 | XSS | 🟡 | React escapes by default; no explicit CSP / security headers. |
-| Sensitive-data encryption at rest | ❌ | Not implemented (no sensitive PII stored in this MVP). |
+| Sensitive-data encryption at rest | ❌ | Not implemented (the platform stores no sensitive PII). |
 
 ---
 
@@ -263,7 +263,7 @@ closes and the row returns to UP.
 - **Database-per-service** — independent data ownership, no shared schema.
 - **Cache** — Redis offloads profile reads.
 - **Documented horizontal-scaling path** — ALB/ECS in the cloud deployment
-  diagram; current MVP runs single instances (no autoscaling configured yet).
+  diagram; the current release runs single instances (no autoscaling configured yet).
 
 ---
 
@@ -345,7 +345,7 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 | 2 | Reusable components + design patterns in code | ✅ | Strategy+Factory, Repository/Ports, Gateway, Cache-aside |
 | 3 | Relational schema + indexes | ✅ | `postgres/init.sh`; indexes on user_id, category |
 | 3 | NoSQL structure | ✅ | Redis key-value profile cache |
-| 3 | Data lake / pipeline | ➖ | Not applicable to this MVP |
+| 3 | Data lake / pipeline | ➖ | Out of scope for this platform (no batch/offline analytics requirement) |
 | 4 | CI/CD pipeline in repo, with build/scan/test/deploy | ✅ | `.github/workflows/ci.yml` (7 jobs) |
 | 4 | SonarQube specifically | 🟡 | Equivalent static analysis (gosec/golangci/govulncheck/npm audit); SonarQube not wired |
 | 5 | Unit testing | ✅ | 66 cases, all services |
@@ -367,9 +367,7 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
 3. **Horizontal scaling** — add load balancer + autoscaling config (currently single instances).
 4. **Apply clean-architecture layering** to the user/content/gateway services
    (currently flatter than the recommendation service).
-5. **Note:** `@google/genai` is a declared dependency but is **not used** in code —
-   there is no LLM integration; the technical added value is fault tolerance + observability.
-6. **Wire a real Prometheus + Grafana** against the existing `/metrics`
+5. **Wire a real Prometheus + Grafana** against the existing `/metrics`
    endpoints (they already speak the exposition format; only the scrape config
    is missing).
 
