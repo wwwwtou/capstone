@@ -44,13 +44,20 @@ func main() {
 	r := mux.NewRouter()
 	handler.Register(r)
 
+	// Observability: metrics registry + breaker-state gauges + scrape endpoints.
+	metrics := infra.NewMetrics("recommendation")
+	metrics.SetGauge("breaker_user", profileRepo.BreakerState)
+	metrics.SetGauge("breaker_content", contentRepo.BreakerState)
+	r.HandleFunc("/metrics", metrics.Handler()).Methods(http.MethodGet)
+	r.HandleFunc("/metricsz", metrics.JSONHandler()).Methods(http.MethodGet)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8083"
 	}
 	addr := ":" + port
 	log.Println("Recommendation service listening on", addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	log.Fatal(http.ListenAndServe(addr, metrics.Middleware(infra.RequestIDMiddleware(r))))
 }
 
 func envOr(key, def string) string {

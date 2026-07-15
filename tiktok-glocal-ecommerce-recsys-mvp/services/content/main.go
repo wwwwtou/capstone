@@ -13,6 +13,7 @@ import (
 )
 
 var db *sql.DB
+var metrics = NewMetrics("content")
 
 func main() {
 	dsn := os.Getenv("POSTGRES_URL")
@@ -29,6 +30,8 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/healthz", healthHandler).Methods("GET")
 	r.HandleFunc("/internal/content/candidates", handleCandidates).Methods("GET")
+	r.HandleFunc("/metrics", metrics.Handler()).Methods("GET")
+	r.HandleFunc("/metricsz", metrics.JSONHandler()).Methods("GET")
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -36,7 +39,7 @@ func main() {
 	}
 	addr := ":" + port
 	log.Println("Content service listening on", addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	log.Fatal(http.ListenAndServe(addr, metrics.Middleware(RequestIDMiddleware(r))))
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

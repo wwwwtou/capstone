@@ -64,6 +64,39 @@ try {
   const history = await j(await fetch(`${BASE}/api/v1/configs/history`));
   check("configs/history: persisted entries exist", Array.isArray(history.data) && history.data.length >= 1);
 
+  // --- Interactions API through the gateway ---
+  const like = await fetch(`${BASE}/api/v1/users/user_123/interactions`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_type: "like", metadata: { category: "electronics" } }),
+  });
+  check("interactions POST via gateway -> 204", like.status === 204);
+
+  // --- Request tracing: one X-Request-ID across gateway -> rec service ---
+  const traced = await fetch(`${BASE}/api/v1/recommendations?user_id=user_123`, {
+    headers: { "X-Request-ID": "it-trace-42" },
+  });
+  const tracedBody = await j(traced);
+  check("trace: gateway echoes X-Request-ID", traced.headers.get("x-request-id") === "it-trace-42");
+  check("trace: rec service trace_id matches", tracedBody?.trace_id === "it-trace-42");
+
+  // --- Observability: Prometheus endpoint + aggregated metrics ---
+  const promText = await (await fetch(`${BASE}/metrics`)).text();
+  check("prometheus: gateway exposes http_requests_total", promText.includes("http_requests_total"));
+
+  // Warm the profile cache (first hit misses, second hits Redis).
+  await fetch(`${BASE}/internal/users/user_123/profile`);
+  await fetch(`${BASE}/internal/users/user_123/profile`);
+
+  const metrics = await j(await fetch(`${BASE}/api/v1/metrics`));
+  check("metrics: gateway snapshot present", typeof metrics?.gateway?.requests_total === "number");
+  check("metrics: downstream snapshots aggregated",
+    !!metrics?.services?.user && !!metrics?.services?.content && !!metrics?.services?.recommendation);
+  check("metrics: breakers closed under healthy stack",
+    metrics?.gateway?.gauges?.breaker_user === "closed" &&
+    metrics?.services?.recommendation?.gauges?.breaker_content === "closed");
+  check("metrics: redis cache hits counted",
+    (metrics?.services?.user?.counters?.cache_hits ?? 0) >= 1);
+
   // restore default
   await fetch(`${BASE}/api/v1/configs`, {
     method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

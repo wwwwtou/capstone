@@ -15,14 +15,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
 var (
 	startTime time.Time
-	reqCount  int64
 	jwtSecret string
+	metrics   *Metrics
 )
 
 func proxyTo(target string, removePrefix string, cb *CircuitBreaker) http.HandlerFunc {
@@ -30,6 +29,12 @@ func proxyTo(target string, removePrefix string, cb *CircuitBreaker) http.Handle
 	proxy := httputil.NewSingleHostReverseProxy(url)
 	// Guard every downstream hop with the per-service circuit breaker.
 	proxy.Transport = breakerTransport{base: http.DefaultTransport, cb: cb}
+	// The gateway already stamped X-Request-ID on the response; drop the
+	// downstream echo so the client sees a single trace id, not a joined pair.
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Del("X-Request-ID")
+		return nil
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		if errors.Is(err, ErrCircuitOpen) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
@@ -159,7 +164,7 @@ func handleHealth(userURL, contentURL, recURL string) http.HandlerFunc {
 		if uptime < 1 {
 			uptime = 1
 		}
-		rps := float64(atomic.LoadInt64(&reqCount)) / uptime
+		rps := float64(metrics.RequestsTotal()) / uptime
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "healthy",
@@ -179,9 +184,43 @@ func handleHealth(userURL, contentURL, recURL string) http.HandlerFunc {
 	}
 }
 
+// handleMetricsAggregate serves the dashboard's one-stop metrics feed: the
+// gateway's own snapshot plus every downstream service's /metricsz (null when a
+// service is unreachable, which the UI renders as DOWN).
+func handleMetricsAggregate(m *Metrics, targets map[string]string) http.HandlerFunc {
+	client := &http.Client{Timeout: 900 * time.Millisecond}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		services := map[string]interface{}{}
+		for name, base := range targets {
+			var snap map[string]interface{}
+			resp, err := client.Get(base + "/metricsz")
+			if err == nil {
+				if resp.StatusCode == http.StatusOK {
+					if decodeErr := json.NewDecoder(resp.Body).Decode(&snap); decodeErr != nil {
+						snap = nil
+					}
+				}
+				resp.Body.Close()
+			}
+			if snap == nil {
+				services[name] = nil
+			} else {
+				services[name] = snap
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"mode":     "gateway",
+			"ts":       time.Now().UnixMilli(),
+			"gateway":  m.Snapshot(),
+			"services": services,
+		})
+	}
+}
+
 func main() {
 	startTime = time.Now()
 	jwtSecret = resolveJWTSecret()
+	metrics = NewMetrics("gateway")
 
 	mux := http.NewServeMux()
 
@@ -194,15 +233,32 @@ func main() {
 	contentBreaker := NewCircuitBreaker("content", 5, 5*time.Second)
 	recBreaker := NewCircuitBreaker("recommendation", 5, 5*time.Second)
 
+	// Breaker states are exported as observability gauges, read at scrape time.
+	metrics.SetGauge("breaker_user", userBreaker.State)
+	metrics.SetGauge("breaker_content", contentBreaker.State)
+	metrics.SetGauge("breaker_recommendation", recBreaker.State)
+
 	mux.HandleFunc("/api/v1/health", handleHealth(userServiceURL, contentServiceURL, recommendationServiceURL))
 	mux.HandleFunc("/api/v1/login", handleLogin)
 
-	// route prefixes
-	mux.HandleFunc("/api/v1/users/", proxyTo(userServiceURL, "/api/v1/users", userBreaker))
-	mux.HandleFunc("/internal/users/", proxyTo(userServiceURL, "/internal/users", userBreaker))
+	// Observability: Prometheus text, JSON snapshot, and the cross-service
+	// aggregation the dashboard polls.
+	mux.HandleFunc("/metrics", metrics.Handler())
+	mux.HandleFunc("/metricsz", metrics.JSONHandler())
+	mux.HandleFunc("/api/v1/metrics", handleMetricsAggregate(metrics, map[string]string{
+		"user":           userServiceURL,
+		"content":        contentServiceURL,
+		"recommendation": recommendationServiceURL,
+	}))
 
-	mux.HandleFunc("/api/v1/content/", proxyTo(contentServiceURL, "/api/v1/content", contentBreaker))
-	mux.HandleFunc("/internal/content/", proxyTo(contentServiceURL, "/internal/content", contentBreaker))
+	// Route prefixes. Downstream services register their full paths (e.g. the
+	// user service serves /api/v1/users/{id}/interactions itself), so the
+	// gateway forwards paths untouched — stripping the prefix here would 404.
+	mux.HandleFunc("/api/v1/users/", proxyTo(userServiceURL, "", userBreaker))
+	mux.HandleFunc("/internal/users/", proxyTo(userServiceURL, "", userBreaker))
+
+	mux.HandleFunc("/api/v1/content/", proxyTo(contentServiceURL, "", contentBreaker))
+	mux.HandleFunc("/internal/content/", proxyTo(contentServiceURL, "", contentBreaker))
 
 	mux.HandleFunc("/api/v1/recommendations", proxyTo(recommendationServiceURL, "", recBreaker))
 	mux.HandleFunc("/api/v1/recommendations/", proxyTo(recommendationServiceURL, "", recBreaker))
@@ -229,7 +285,9 @@ func main() {
 		port = "8080"
 	}
 	log.Println("Gateway listening on :" + port)
-	log.Fatal(http.ListenAndServe(":"+port, countRequests(limiter.Middleware(mux))))
+	// Outermost: metrics (sees everything, incl. 429s from the limiter), then
+	// request-id assignment so every downstream hop shares one trace id.
+	log.Fatal(http.ListenAndServe(":"+port, metrics.Middleware(RequestIDMiddleware(limiter.Middleware(mux)))))
 }
 
 func envFloat(key string, def float64) float64 {
@@ -265,12 +323,4 @@ func resolveJWTSecret() string {
 		"Tokens will not survive a restart or work across multiple instances. " +
 		"Set JWT_SECRET in production.")
 	return hex.EncodeToString(b)
-}
-
-// countRequests records every request so /health can report real throughput.
-func countRequests(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&reqCount, 1)
-		next.ServeHTTP(w, r)
-	})
 }

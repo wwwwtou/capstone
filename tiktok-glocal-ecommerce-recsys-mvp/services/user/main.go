@@ -16,6 +16,7 @@ import (
 
 var db *sql.DB
 var rdb *redis.Client
+var metrics = NewMetrics("user")
 
 func main() {
 	dsn := os.Getenv("POSTGRES_URL")
@@ -51,6 +52,8 @@ func main() {
 	}).Methods("GET")
 	r.HandleFunc("/api/v1/users/{id}/interactions", handleInteraction).Methods("POST")
 	r.HandleFunc("/internal/users/{id}/profile", handleProfile).Methods("GET")
+	r.HandleFunc("/metrics", metrics.Handler()).Methods("GET")
+	r.HandleFunc("/metricsz", metrics.JSONHandler()).Methods("GET")
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -58,7 +61,7 @@ func main() {
 	}
 	addr := ":" + port
 	log.Println("User service listening on", addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	log.Fatal(http.ListenAndServe(addr, metrics.Middleware(RequestIDMiddleware(r))))
 }
 
 type Interaction struct {
@@ -109,10 +112,12 @@ func handleProfile(w http.ResponseWriter, r *http.Request) {
 	key := fmt.Sprintf("profile:%s", id)
 	cached, err := rdb.Get(ctx, key).Result()
 	if err == nil {
+		metrics.Inc("cache_hits")
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(cached))
 		return
 	}
+	metrics.Inc("cache_misses")
 	// build a simple profile from interactions
 	rows, err := db.QueryContext(ctx, "SELECT event_type, metadata FROM interactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50", id)
 	if err != nil {

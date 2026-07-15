@@ -12,11 +12,15 @@ import (
 
 // doGetJSON performs a single GET and decodes a 2xx JSON body into out. A
 // transport error or non-2xx status is returned as an error so the circuit
-// breaker counts it as a failure.
+// breaker counts it as a failure. The inbound request id (if any) is forwarded
+// so one X-Request-ID traces the whole gateway -> rec -> user/content chain.
 func doGetJSON(ctx context.Context, url string, out interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
+	}
+	if id := RequestIDFromContext(ctx); id != "" {
+		req.Header.Set("X-Request-ID", id)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -40,6 +44,9 @@ func NewHTTPProfileRepository(baseURL string) *HTTPProfileRepository {
 	return &HTTPProfileRepository{baseURL: baseURL, breaker: NewCircuitBreaker("user-service", 3, 5*time.Second)}
 }
 
+// BreakerState exposes the downstream breaker state for observability.
+func (r *HTTPProfileRepository) BreakerState() string { return r.breaker.State() }
+
 func (r *HTTPProfileRepository) GetProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
 	var profile domain.UserProfile
 	url := r.baseURL + "/internal/users/" + userID + "/profile"
@@ -59,6 +66,9 @@ type HTTPContentRepository struct {
 func NewHTTPContentRepository(baseURL string) *HTTPContentRepository {
 	return &HTTPContentRepository{baseURL: baseURL, breaker: NewCircuitBreaker("content-service", 3, 5*time.Second)}
 }
+
+// BreakerState exposes the downstream breaker state for observability.
+func (r *HTTPContentRepository) BreakerState() string { return r.breaker.State() }
 
 func (r *HTTPContentRepository) GetCandidates(ctx context.Context) ([]domain.Video, error) {
 	var videos []domain.Video

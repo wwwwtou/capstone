@@ -50,13 +50,20 @@ func (h *Handler) recommend(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.svc.Recommend(r.Context(), userID)
 	if err != nil {
-		log.Println("content service unavailable after retries/breaker:", err)
+		log.Printf("[%s] content service unavailable after retries/breaker: %v", r.Header.Get("X-Request-ID"), err)
 		http.Error(w, "content service unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
+	// Prefer the propagated request id so the response trace_id matches the
+	// X-Request-ID seen at the gateway and in downstream logs.
+	traceID := r.Header.Get("X-Request-ID")
+	if traceID == "" {
+		traceID = "req-" + time.Now().UTC().Format("20060102150405.000")
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"trace_id": "req-" + time.Now().UTC().Format("20060102150405.000"),
+		"trace_id": traceID,
 		"code":     200,
 		"message":  "success",
 		"data": map[string]interface{}{
