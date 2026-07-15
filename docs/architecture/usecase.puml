@@ -1,27 +1,38 @@
 @startuml usecase
-title Use Case Diagram - Recommendation Admin Platform
+title Use Case Diagram - Recommendation Platform (Admin + Consumer)
 
 left to right direction
 skinparam shadowing false
 
-actor "Terminal User" as U
+actor "Terminal User\n(consumer)" as U
 actor "Admin / Operator" as A
 
 rectangle "Video Recommendation System" {
-  usecase "Request Recommendations" as UC1
-  usecase "Simulate Recommendations\nby user_id" as UC2
-  usecase "View System Health\n& Microservice Topology" as UC3
-  usecase "View Algorithm Config" as UC4
-  usecase "Update Algorithm Config\n(strategy, weight)" as UC5
-  usecase "Login to Dashboard (JWT)" as UC6
+  usecase "Browse For You Feed\n(ranked video stream)" as UC1
+  usecase "React to Video\n(view / like -> profile update)" as UC2
+  usecase "Re-rank Feed\nfrom updated profile" as UC3
+  usecase "Simulate Recommendations\nby user_id" as UC4
+  usecase "View System Health\n& Microservice Topology" as UC5
+  usecase "Watch Live Monitoring\n(QPS, latency, breakers, cache)" as UC6
+  usecase "Generate Demo Traffic\n(continuous / burst)" as UC7
+  usecase "View Algorithm Config" as UC8
+  usecase "Update Algorithm Config\n(strategy, weight)" as UC9
+  usecase "Login to Dashboard (JWT)" as UC10
 }
 
 U --> UC1
-A --> UC2
-A --> UC3
+U --> UC2
+U --> UC3
+
 A --> UC4
 A --> UC5
+A --> UC6
+A --> UC7
+A --> UC8
+A --> UC9
 
-UC5 ..> UC6 : <<include>>
-UC2 ..> UC1 : <<extend>>
+UC9 ..> UC10 : <<include>>
+UC3 ..> UC2 : <<extend>>\n(profile changed)
+UC4 ..> UC1 : <<extend>>
+UC7 ..> UC6 : <<extend>>\n(drives the charts)
 @enduml

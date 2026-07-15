@@ -16,6 +16,8 @@ participant "Ranking Strategy\n(Strategy + Factory)" as RNG
 Client -> BFF : GET /api/v1/recommendations?user_id=123
 BFF -> GW : proxy (full-stack mode)
 
+note over GW : X-Request-ID assigned here if absent and\npropagated on every hop below; the same id\ncomes back as trace_id in the response.\nEvery hop records count + latency into its\nmetrics registry (/metrics, /metricsz)
+
 GW -> GW : per-IP rate limit (token bucket)
 alt rate limit exceeded
   GW --> Client : 429 Too Many Requests (Retry-After)
@@ -41,7 +43,7 @@ DB --> REC : strategy_name, weight
 REC -> RNG : Rank(profile, candidates)
 note over RNG : pure in-memory ranking\nscore plus reason per video
 RNG --> REC : sorted videos
-REC --> GW : 200 data videos, strategy, degraded
-GW --> BFF : 200
+REC --> GW : 200 trace_id, data videos, strategy, degraded
+GW --> BFF : 200 (single X-Request-ID header)
 BFF --> Client : 200 JSON
 @enduml

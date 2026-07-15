@@ -14,20 +14,24 @@ fork again
   npm audit --audit-level=high (hard gate);
 fork again
   :3) Unit Tests - Report Artifact
-  go test across all services (53 cases)
+  go test across all services (66 cases)
   -> unit-test-report.md;
 fork again
   :4) Lint & Build Checks
   tsc --noEmit, vite build
-  API smoke test, docker build;
+  API smoke test (18), docker build;
 fork again
   :5) Microservice Integration
   docker compose up --build
-  integration (14) + load test, then teardown;
+  integration (22) + load test, then teardown;
+fork again
+  :6) End-to-End Tests (Playwright)
+  admin + feed + monitoring flows (10)
+  -> playwright-report artifact;
 end fork
 
 if (all jobs green AND ref == refs/heads/main?) then (yes)
-  :6) Deploy to Render
+  :7) Deploy to Render
   POST deploy hook (skips if secret unset);
   stop
 else (no / PR)

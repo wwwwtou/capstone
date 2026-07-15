@@ -6,14 +6,14 @@ skinparam shadowing false
 skinparam defaultTextAlignment center
 
 actor "Admin / Operator" as admin
-actor "Terminal User" as user
+actor "Terminal User\n(consumer)" as user
 
 package "Presentation Layer" {
-  [React Admin Dashboard\n(Vite SPA: DashboardHome, Simulator, AlgoConfig)] as react
+  [React Dashboard (Vite SPA)\nAdmin: DashboardHome, Monitoring,\nAlgoConfig, Simulator\nConsumer: For You Feed] as react
 }
 
 package "Edge / BFF Layer" {
-  [Node server.ts\n(dual-mode: in-memory mock  OR  reverse-proxy to gateway)] as bff
+  [Node server.ts\n(dual-mode: in-memory mock replica\nOR reverse-proxy to gateway)\n+ demo traffic generator\n+ edge metrics] as bff
 }
 
 package "API Gateway Layer (Go)" {
@@ -23,13 +23,16 @@ package "API Gateway Layer (Go)" {
     * JWT auth (HS256, stdlib) on writes
     * Per-IP rate limiter -> 429
     * Circuit breaker per downstream -> 503
-    * Health aggregation + request counting
+    * Health aggregation
+    * X-Request-ID assignment / tracing
+    * /api/v1/metrics aggregation
+      (scrapes downstream /metricsz)
   end note
 }
 
 package "Domain Services (Go microservices)" {
   [Recommendation Service\n(clean arch: domain/app/infra/transport;\nStrategy + Factory ranking;\nbreaker + retry + cold-start fallback)] as rec
-  [User Profile Service\n(interactions, profile aggregation)] as usvc
+  [User Profile Service\n(interactions, profile aggregation,\ncache hit/miss metrics)] as usvc
   [Content Service\n(video candidates)] as csvc
 }
 
@@ -43,7 +46,7 @@ package "Data Layer" {
 }
 
 admin --> react
-user ..> react : (demo client)
+user --> react : For You Feed\n(view/like events)
 react --> bff : /api/v1/*  (same-origin)
 bff --> gw : proxy (full-stack mode)
 
@@ -57,4 +60,18 @@ rec --> rec_db
 usvc --> user_db
 usvc --> redis
 csvc --> content_db
+
+note bottom of react
+  Consumer closed loop: view/like ->
+  POST /users/{id}/interactions ->
+  profile cache invalidated ->
+  re-ranked feed on refresh
+end note
+
+note bottom of csvc
+  Observability: every Go service exposes
+  /metrics (Prometheus text) + /metricsz (JSON);
+  breaker states exported as gauges;
+  one X-Request-ID traces the whole chain
+end note
 @enduml

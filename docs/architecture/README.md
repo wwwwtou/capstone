@@ -12,14 +12,15 @@ CI/CD, and the circuit-breaker / retry / rate-limit fault-tolerance layer).
 
 | File | Diagram | What it shows |
 |------|---------|---------------|
-| `logical-architecture.puml` | Logical architecture | Layered view: Presentation (React) → Edge/BFF (Node `server.ts`) → API Gateway (Go) → Domain services → Data (PostgreSQL per-service + Redis). Gateway cross-cutting concerns called out. |
+| `logical-architecture.puml` | Logical architecture | Layered view: Presentation (React admin pages + consumer For You feed) → Edge/BFF (Node `server.ts` incl. traffic generator) → API Gateway (Go) → Domain services → Data (PostgreSQL per-service + Redis). Gateway cross-cutting concerns and the consumer closed loop called out. |
 | `physical-architecture.puml` | Physical / deployment (local) | The real `docker-compose` runtime: containers, images, ports, env wiring, volumes. |
 | `deployment-cloud.puml` | Cloud deployment | Current Render single-service deploy (`render.yaml`) + the AWS EC2 Terraform option (`terraform/`). |
 | `ddd-context-map.puml` | DDD context map | Bounded contexts (Recommendation = core; User/Content = supporting; Dashboard = generic), their relationships, and database-per-service ownership. |
 | `er-diagram.puml` | ER diagram (detailed) | All tables grouped by owning database (`user_db`, `content_db`, `rec_db`) with columns, types, PK/index/unique, the Redis key-value structure, and app-level (no-FK) cross-service links. |
-| `sequence-get-recommendations.puml` | Core use-case sequence | `GET /api/v1/recommendations` end to end, including rate-limit 429, circuit-breaker routing, concurrent downstream fetches, and the cold-start degraded fallback. |
-| `cicd-pipeline.puml` | CI/CD pipeline | The six GitHub Actions jobs and the gated Render deploy. |
-| `usecase.puml` | Use case diagram | Terminal User vs Admin/Operator actors and their use cases. |
+| `sequence-get-recommendations.puml` | Core use-case sequence | `GET /api/v1/recommendations` end to end, including rate-limit 429, circuit-breaker routing, concurrent downstream fetches, the cold-start degraded fallback, and X-Request-ID tracing. |
+| `observability.puml` | Observability & monitoring | The metrics pipeline: per-service registries, `/metrics` (Prometheus) + `/metricsz` (JSON), the gateway `/api/v1/metrics` aggregator, the Live Monitoring page, the demo traffic generator, and request tracing. |
+| `cicd-pipeline.puml` | CI/CD pipeline | The seven GitHub Actions jobs (incl. Playwright E2E) and the gated Render deploy. |
+| `usecase.puml` | Use case diagram | Consumer (feed browsing, reactions, re-rank) and Admin/Operator (monitoring, demo traffic, config, simulator) use cases. |
 | `recommendation-clean-architecture.puml` | Clean/onion architecture | The core recommendation service's layered code structure (`internal/domain` → `app` → `infra`/`transport`), showing the repository ports and the adapters that implement them. Mirrors the actual package layout. |
 
 Pre-rendered PNGs live in `png/` for quick viewing / screenshots.

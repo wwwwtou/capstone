@@ -1,0 +1,64 @@
+@startuml observability
+title Observability & Monitoring - Metrics, Tracing, Demo Traffic
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+actor "Admin / Operator" as admin
+
+package "Browser" {
+  [Live Monitoring page\npolls every 2s; QPS / error rate\ncomputed from counter deltas;\nSVG charts, breaker badges,\nper-service table] as MON
+  [Traffic Controls\nStart/Stop continuous load (1-50 rps)\nBurst 300 -> mini load report] as TC
+}
+
+package "Edge / BFF (server.ts)" {
+  [GET /api/v1/metrics\n(proxy mode: forward to gateway;\nmock mode: same shape from replica)] as BMET
+  [Traffic generator\nserver-side loop, survives navigation\nPOST /api/v1/simulator/traffic | /burst] as GEN
+}
+
+package "API Gateway (Go)" {
+  [Metrics registry\nrequests / status classes / routes,\nlatency histogram p50-p99,\nrate_limited_total,\nbreaker gauges per downstream] as GMET
+  [GET /api/v1/metrics aggregator\nown snapshot + scrape of each\ndownstream /metricsz (null = DOWN)] as AGG
+}
+
+package "Domain services (Go)" {
+  [recommendation /metricsz\n+ breaker_user / breaker_content gauges] as RMET
+  [user /metricsz\n+ cache_hits / cache_misses (Redis)] as UMET
+  [content /metricsz] as CMET
+}
+
+admin --> MON
+admin --> TC
+
+MON --> BMET : poll
+BMET --> AGG
+AGG --> GMET
+AGG --> RMET : scrape
+AGG --> UMET : scrape
+AGG --> CMET : scrape
+
+TC --> GEN : one click
+GEN --> BMET : synthetic mixed load\n(recs / interactions / profile / configs)\nflows through the full chain
+
+note bottom of GMET
+  Every service also serves /metrics in
+  Prometheus text exposition format ->
+  scrape-ready for a real Prometheus/Grafana.
+end note
+
+note bottom of RMET
+  X-Request-ID: assigned at the edge,
+  propagated gateway -> rec -> user/content
+  (context-carried through the clean-arch
+  layers), echoed once per response and
+  returned as trace_id.
+end note
+
+note bottom of GEN
+  Fault-injection demo: docker compose stop user
+  -> breaker_user gauge = open, user row DOWN,
+  recommendations still 200 with degraded:true;
+  recovery closes the breaker (half-open probe).
+end note
+@enduml

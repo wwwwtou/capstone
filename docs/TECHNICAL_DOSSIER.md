@@ -37,10 +37,11 @@ Authoritative PlantUML diagrams (source `.puml` + rendered `png/`) in
 | Cloud deployment (Render + AWS IaC) | `deployment-cloud.puml` |
 | DDD context map | `ddd-context-map.puml` |
 | ER diagram (detailed, per-service DBs) | `er-diagram.puml` |
-| Core sequence: GET /recommendations | `sequence-get-recommendations.puml` |
+| Core sequence: GET /recommendations (incl. tracing) | `sequence-get-recommendations.puml` |
+| Observability & monitoring pipeline | `observability.puml` |
 | Clean/onion architecture (recommendation) | `recommendation-clean-architecture.puml` |
-| CI/CD pipeline | `cicd-pipeline.puml` |
-| Use case diagram | `usecase.puml` |
+| CI/CD pipeline (7 jobs) | `cicd-pipeline.puml` |
+| Use case diagram (consumer + admin) | `usecase.puml` |
 
 ### 2.1 Layers (logical)
 
@@ -338,11 +339,7 @@ Legend: ✅ met (in code) · 🟡 partial · ❌ not done · ➖ N/A
    (currently flatter than the recommendation service).
 5. **Note:** `@google/genai` is a declared dependency but is **not used** in code —
    there is no LLM integration; the technical added value is fault tolerance + observability.
-6. **Architecture diagrams** predate the observability release: the `/metrics`,
-   `/metricsz`, `/api/v1/metrics` endpoints, the Feed/Monitoring pages, and the
-   BFF traffic generator are documented here (§2.3, §7) but not yet drawn into
-   the PlantUML sources.
-7. **Wire a real Prometheus + Grafana** against the existing `/metrics`
+6. **Wire a real Prometheus + Grafana** against the existing `/metrics`
    endpoints (they already speak the exposition format; only the scrape config
    is missing).
 

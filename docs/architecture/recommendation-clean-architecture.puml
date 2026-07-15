@@ -25,10 +25,11 @@ package "domain  (core, no external deps)" #fffbe6 {
 }
 
 package "infra  (adapters)" #eefcef {
-  [HTTPProfileRepository\nbreaker + retry] as HPR
-  [HTTPContentRepository\nbreaker + retry] as HCR
+  [HTTPProfileRepository\nbreaker + retry\n+ X-Request-ID propagation] as HPR
+  [HTTPContentRepository\nbreaker + retry\n+ X-Request-ID propagation] as HCR
   [PostgresConfigRepository] as PCR
   [CircuitBreaker / callResilient] as RES
+  [Metrics registry + middleware\n/metrics, /metricsz,\nbreaker-state gauges] as MET
 }
 
 [main.go\ncomposition root] as M #whitesmoke
@@ -46,11 +47,15 @@ PCR ..|> CFR
 HPR --> RES
 HCR --> RES
 
+MET ..> HPR : reads breaker state
+MET ..> HCR : reads breaker state
+
 M --> H
 M --> S
 M --> HPR
 M --> HCR
 M --> PCR
+M --> MET : wraps router\n(middleware + scrape routes)
 
 note bottom
   Dependency rule: arrows point inward. domain depends on nothing;

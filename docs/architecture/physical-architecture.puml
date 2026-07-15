@@ -39,5 +39,20 @@ cnt --> pg  : content_db
 note bottom of gw
   depends_on: user, content, recommendation
   JWT_SECRET, RATE_LIMIT_RPS/_BURST via env
+  host port override: GATEWAY_HOST_PORT (e.g. 18080
+  when ::8080 is taken on the host)
+end note
+
+note bottom of fe
+  BFF also hosts the demo traffic generator
+  (/api/v1/simulator/traffic, /simulator/burst)
+  and, without GATEWAY_URL, an in-memory
+  mock replica of the whole stack
+end note
+
+note bottom of rec
+  every Go container exposes
+  /metrics (Prometheus) + /metricsz (JSON);
+  gateway aggregates them on /api/v1/metrics
 end note
 @enduml
