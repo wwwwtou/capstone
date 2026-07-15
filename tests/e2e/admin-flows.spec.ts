@@ -8,9 +8,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("Dashboard shows live health metrics and microservice topology", async ({ page }) => {
-  // Metric cards are populated from GET /api/v1/health.
-  await expect(page.getByText("1250 RPS")).toBeVisible();
-  await expect(page.getByText("32 ms")).toBeVisible();
+  // Metric cards are populated from GET /api/v1/health. Throughput/latency are
+  // measured from real traffic now, so assert shape rather than fixed values.
+  await expect(page.getByText(/^\d+ RPS$/)).toBeVisible();
+  await expect(page.getByText(/^\d+ ms$/)).toBeVisible();
   // Microservice topology lists the core services.
   await expect(page.getByText("Recommendation Core (Go)")).toBeVisible();
   await expect(page.getByText("Management Dashboard (React)")).toBeVisible();
@@ -32,9 +33,11 @@ test("Simulator returns a ranked recommendation feed for a user_id", async ({ pa
   await page.getByRole("button", { name: "Fetch Recommendations" }).click();
 
   // Ranked video cards render with title and an explainable reason badge.
+  // user_123 is seeded with electronics/tech interest, so the engagement
+  // strategy ranks the electronics video first with an interest_match reason.
   // (Target the heading to avoid also matching the raw-JSON <pre> blob.)
-  await expect(page.getByRole("heading", { name: "Top Tech 2026" })).toBeVisible();
-  await expect(page.getByText("interest_match_tech").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wireless Earbuds Deep Dive" })).toBeVisible();
+  await expect(page.getByText("interest_match:electronics").first()).toBeVisible();
   // Raw response panel proves the API round-trip.
   await expect(page.getByText("Raw Response (v1)")).toBeVisible();
 });

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { recSysService } from "../services/api";
 import { Search, Play, UserCircle, Tag, TrendingUp, Terminal } from "lucide-react";
+import TrafficControls from "../components/TrafficControls";
 
 export default function Simulator() {
   const [userId, setUserId] = useState("user_123");
@@ -20,7 +21,9 @@ export default function Simulator() {
   };
 
   return (
-    <div className="grid grid-cols-5 gap-8 animate-in fade-in duration-700">
+    <div className="space-y-8 animate-in fade-in duration-700">
+    <TrafficControls />
+    <div className="grid grid-cols-5 gap-8">
       <div className="col-span-2 space-y-8">
         <div className="bg-slate-900/50 border border-slate-800 p-8 rounded-3xl space-y-6">
           <h3 className="text-xl font-bold flex items-center gap-2">
@@ -113,6 +116,7 @@ export default function Simulator() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

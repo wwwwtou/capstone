@@ -1,20 +1,23 @@
 import React, { useState } from "react";
-import { 
-  Activity, 
-  BarChart3, 
-  Zap, 
+import {
+  Activity,
+  BarChart3,
+  Zap,
   LayoutDashboard,
   Cpu,
   LogIn,
-  CheckCircle2
+  CheckCircle2,
+  Clapperboard
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import DashboardHome from "./pages/DashboardHome";
 import AlgoConfig from "./pages/AlgoConfig";
 import Simulator from "./pages/Simulator";
+import Feed from "./pages/Feed";
+import Monitoring from "./pages/Monitoring";
 import { recSysService } from "./services/api";
 
-type TabID = "home" | "config" | "simulator";
+type TabID = "home" | "feed" | "monitoring" | "config" | "simulator";
 
 export default function App() {
   const [activeTab, setActiveTab ] = useState<TabID>("home");
@@ -46,6 +49,8 @@ export default function App() {
 
         <nav className="space-y-1">
           <NavButton id="home" label="Dashboard Home" icon={<LayoutDashboard />} active={activeTab} onClick={setActiveTab} />
+          <NavButton id="feed" label="For You Feed" icon={<Clapperboard />} active={activeTab} onClick={setActiveTab} />
+          <NavButton id="monitoring" label="Live Monitoring" icon={<Activity />} active={activeTab} onClick={setActiveTab} />
           <NavButton id="config" label="Algorithm Config" icon={<BarChart3 />} active={activeTab} onClick={setActiveTab} />
           <NavButton id="simulator" label="Demo Simulator" icon={<Cpu />} active={activeTab} onClick={setActiveTab} />
           
@@ -69,6 +74,8 @@ export default function App() {
           <div>
             <h2 className="text-3xl font-black tracking-tighter mb-1 uppercase">
               {activeTab === "home" && "Operational Pulse"}
+              {activeTab === "feed" && "Consumer Experience"}
+              {activeTab === "monitoring" && "Observability Center"}
               {activeTab === "config" && "Ranking Architecture"}
               {activeTab === "simulator" && "Endpoint Simulator"}
             </h2>
@@ -111,6 +118,8 @@ export default function App() {
               transition={{ duration: 0.3 }}
             >
               {activeTab === "home" && <DashboardHome />}
+              {activeTab === "feed" && <Feed />}
+              {activeTab === "monitoring" && <Monitoring />}
               {activeTab === "config" && <AlgoConfig />}
               {activeTab === "simulator" && <Simulator />}
             </motion.div>

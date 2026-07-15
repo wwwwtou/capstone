@@ -76,6 +76,59 @@ try {
   const history = await (await fetch(`${base}/api/v1/configs/history`)).json();
   check("configs/history: records the change", Array.isArray(history?.data) && history.data.length >= 1);
 
+  // --- Closed loop: interaction -> profile -> ranking ---
+  // Restore the engagement strategy (the PUT above switched to chronological).
+  await fetch(`${base}/api/v1/configs`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ strategy_name: "engagement", weight: 0.85 }),
+  });
+  const like = await fetch(`${base}/api/v1/users/smoke_user/interactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_type: "like", metadata: { category: "travel" } }),
+  });
+  check("interactions POST -> 204", like.status === 204);
+  await fetch(`${base}/api/v1/users/smoke_user/interactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_type: "view", metadata: { category: "travel" } }),
+  });
+  const profile = await (await fetch(`${base}/api/v1/users/smoke_user/profile`)).json();
+  check("profile: aggregates interaction tags", profile?.tags?.travel >= 2);
+  const recsAfter = await (await fetch(`${base}/api/v1/recommendations?user_id=smoke_user`)).json();
+  check(
+    "recommendations: ranking reflects new profile",
+    recsAfter?.data?.videos?.[0]?.reason === "interest_match:travel"
+  );
+
+  // --- Observability: aggregated metrics + request tracing ---
+  const metrics = await (await fetch(`${base}/api/v1/metrics`)).json();
+  check("metrics: aggregate shape", metrics?.mode === "mock" && typeof metrics?.gateway?.requests_total === "number");
+  check("metrics: per-service snapshots", !!metrics?.services?.user && !!metrics?.services?.recommendation);
+  check("metrics: cache counters tracked", typeof metrics?.services?.user?.counters?.cache_misses === "number");
+
+  const traced = await fetch(`${base}/api/v1/recommendations?user_id=smoke_user`, {
+    headers: { "X-Request-ID": "smoke-trace-1" },
+  });
+  const tracedBody = await traced.json();
+  check(
+    "trace: X-Request-ID echoed end to end",
+    traced.headers.get("x-request-id") === "smoke-trace-1" && tracedBody?.trace_id === "smoke-trace-1"
+  );
+
+  // --- Demo traffic generator ---
+  const tStatus = await (await fetch(`${base}/api/v1/simulator/traffic`)).json();
+  check("traffic: status endpoint reachable", tStatus?.data?.enabled === false);
+  const burst = await (
+    await fetch(`${base}/api/v1/simulator/burst`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ count: 20, concurrency: 5 }),
+    })
+  ).json();
+  check("burst: completes with zero errors", burst?.data?.requests === 20 && burst?.data?.errors === 0);
+
   console.log(`\nSmoke: ${passed} passed, ${failed} failed`);
   exitCode = failed === 0 ? 0 : 1;
 } catch (err) {
