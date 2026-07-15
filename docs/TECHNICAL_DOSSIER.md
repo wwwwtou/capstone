@@ -43,6 +43,18 @@ Authoritative PlantUML diagrams (source `.puml` + rendered `png/`) in
 | CI/CD pipeline (7 jobs) | `cicd-pipeline.puml` |
 | Use case diagram (consumer + admin) | `usecase.puml` |
 
+All diagrams are embedded inline in the sections below (rendered PNGs live in
+`architecture/png/`).
+
+**Use cases — consumer (feed browsing, reactions, re-rank) and admin
+(monitoring, demo traffic, config, simulator):**
+
+![Use case diagram](architecture/png/usecase.png)
+
+**Logical architecture (layered):**
+
+![Logical architecture](architecture/png/logical-architecture.png)
+
 ### 2.1 Layers (logical)
 
 1. **Presentation** — React SPA (Vite), 5 pages: `DashboardHome`, `Feed`
@@ -100,8 +112,9 @@ feed. The loop works identically in mock and full-stack modes.
 ## 4. Domain Model & Database Design
 
 **Database-per-service** (no cross-service DB foreign keys; integration is HTTP-only).
-Schema defined in `tiktok-glocal-ecommerce-recsys-mvp/postgres/init.sh`. See
-`docs/architecture/er-diagram.puml` for the full ER diagram.
+Schema defined in `tiktok-glocal-ecommerce-recsys-mvp/postgres/init.sh`.
+
+![ER diagram](architecture/png/er-diagram.png)
 
 ### user_db (User Profile Service)
 - `interactions(id PK, user_id, event_type, metadata jsonb, created_at)` — index `idx_interactions_user(user_id)`.
@@ -125,8 +138,9 @@ Schema defined in `tiktok-glocal-ecommerce-recsys-mvp/postgres/init.sh`. See
 ## 5. Design Patterns, DDD & Clean Architecture (in code)
 
 - **DDD bounded contexts** → microservices: Recommendation (core), User Profile
-  (supporting), Content (supporting), Dashboard/Monitoring (generic). Context map:
-  `docs/architecture/ddd-context-map.puml`.
+  (supporting), Content (supporting), Dashboard/Monitoring (generic).
+
+![DDD context map](architecture/png/ddd-context-map.png)
 - **Clean / onion architecture** in the core recommendation service
   (`services/recommendation/internal/`), dependencies pointing inward:
   - `domain/` — entities, `RankingStrategy` (Strategy pattern) + `StrategyFactory`
@@ -136,7 +150,8 @@ Schema defined in `tiktok-glocal-ecommerce-recsys-mvp/postgres/init.sh`. See
   - `infra/` — adapters implementing the ports (HTTP repos with breaker+retry,
     Postgres config repo, resilience).
   - `transport/` — HTTP handlers. `main.go` is the composition root.
-  - Diagram: `docs/architecture/recommendation-clean-architecture.puml`.
+
+![Recommendation clean architecture](architecture/png/recommendation-clean-architecture.png)
 - **Strategy + Factory** — `domain/strategy.go` (`EngagementStrategy`,
   `ChronologicalStrategy`, `StrategyFactory`).
 - **Reverse Proxy / API Gateway** — `services/gateway`.
@@ -162,12 +177,19 @@ fallback); after `docker compose start user` the breaker recovers (half-open →
 closed) and personalized results resume. Unit tests cover the breaker state
 machine, retry fail-fast, breaker transport, rate limiter, and the degraded use case.
 
+**Core request sequence (rate limit, breakers, concurrent fetch, degraded
+fallback, request tracing):**
+
+![Sequence: GET /recommendations](architecture/png/sequence-get-recommendations.png)
+
 ---
 
 ## 7. Observability & Monitoring (Technical Added Value #2)
 
 Standard-library instrumentation across every service, one aggregated feed, a
 live monitoring UI, and a built-in demo load generator.
+
+![Observability pipeline](architecture/png/observability.png)
 
 ### 7.1 Metrics pipeline
 
@@ -271,8 +293,9 @@ content-failure error path.
 
 ## 11. CI/CD Pipeline
 
-GitHub Actions `.github/workflows/ci.yml` — 7 jobs (diagram:
-`docs/architecture/cicd-pipeline.puml`):
+GitHub Actions `.github/workflows/ci.yml` — 7 jobs:
+
+![CI/CD pipeline](architecture/png/cicd-pipeline.png)
 
 1. **Go Quality & Security** — `go vet` (hard gate) across all `services/*/go.mod`;
    gosec / golangci-lint / govulncheck (advisory report artifact).
@@ -293,11 +316,18 @@ GitHub Actions `.github/workflows/ci.yml` — 7 jobs (diagram:
 
 - **Local / self-host:** `cd tiktok-glocal-ecommerce-recsys-mvp && docker compose up -d`
   (gateway + 3 services + Postgres + Redis); frontend `GATEWAY_URL=http://localhost:8080 npm run dev`.
-  Diagram: `physical-architecture.puml`.
 - **Cloud (current):** Render single web service from the root `Dockerfile`,
   running `server.ts` in mock mode (`render.yaml`, auto-deploy on push to main).
 - **AWS (IaC option):** `terraform/main.tf` provisions an EC2 instance that
-  bootstraps Docker + the compose stack. Diagram: `deployment-cloud.puml`.
+  bootstraps Docker + the compose stack.
+
+**Physical architecture (docker-compose runtime):**
+
+![Physical architecture](architecture/png/physical-architecture.png)
+
+**Cloud deployment (Render + AWS IaC option):**
+
+![Cloud deployment](architecture/png/deployment-cloud.png)
 
 ---
 
@@ -383,3 +413,77 @@ java -jar <plantuml.jar> -tpng -charset UTF-8 -graphvizdot <dot> -o png docs/arc
 - CI: `.github/workflows/ci.yml`
 - Diagrams: `docs/architecture/`
 - Test suites: `tests/{smoke,integration,e2e,stress}`
+
+---
+
+## 16. Run / Stop / Demo Playbook
+
+### 16.1 Demo mode (mock replica — no Docker, closed loop still works)
+
+```powershell
+# start (repo root) -> http://localhost:3000
+npm run dev
+# stop: Ctrl+C in the same terminal
+```
+
+### 16.2 Full stack (microservices + Postgres + Redis)
+
+```powershell
+# 1) start Docker Desktop (wait until the engine is up)
+
+# 2) start the stack — this dev machine's :8080 is taken by sfs2x-service,
+#    so publish the gateway on 18080 (8090 is in a Windows reserved range):
+cd tiktok-glocal-ecommerce-recsys-mvp
+$env:GATEWAY_HOST_PORT='18080'; docker compose up -d --build
+
+# 3) frontend in proxy mode (new terminal, repo root):
+$env:GATEWAY_URL='http://localhost:18080'; npm run dev
+```
+
+Stop:
+
+```powershell
+# frontend: Ctrl+C
+cd tiktok-glocal-ecommerce-recsys-mvp
+docker compose stop    # keep containers + DB data (fast restart: docker compose start)
+docker compose down    # or: remove containers/network; next 'up' reseeds from init.sh
+```
+
+Git Bash equivalents: `GATEWAY_HOST_PORT=18080 docker compose up -d --build`
+and `GATEWAY_URL=http://localhost:18080 npm run dev`.
+
+### 16.3 Fault-injection demo (the money shot)
+
+```powershell
+docker compose stop user     # watch Monitoring: breaker_user -> OPEN, user row -> DOWN,
+                             # recommendations keep serving 200 with degraded:true
+docker compose start user    # breaker half-open probe -> CLOSED, personalization resumes
+```
+
+### 16.4 Suggested demo flow (~8-10 min)
+
+1. **Live Monitoring** → click **Start Traffic** → charts come alive (explain
+   metrics pipeline: Prometheus format, counter deltas → QPS).
+2. Click **Burst 300** → inline mini load-test report (rps / p99).
+3. **For You Feed** → pick `user_new` (cold start) → like a few videos in one
+   category → interest profile bars grow → **Re-rank Feed** → order + reason
+   badges change (interaction → profile → ranking closed loop).
+4. Full stack only: run the fault injection above while Monitoring is open.
+
+### 16.5 Tests
+
+```powershell
+npm run test:smoke                                   # 18 checks, mock mode
+npm run test:e2e                                     # 10 Playwright flows
+$env:BASE='http://localhost:18080'; npm run test:integration   # 22 checks, stack up
+npm run test:stress                                  # Node load gate
+cd tiktok-glocal-ecommerce-recsys-mvp/services/<svc>; go test ./...   # unit (66 total)
+```
+
+### 16.6 Render (online deploy)
+
+`render.yaml` auto-deploys `main` as a single free web service (mock mode).
+While the service is **suspended** in the Render dashboard, CI job 7 (deploy
+hook) fails — expected; either ignore it, or temporarily delete the
+`DEPLOY_HOOK_URL` repo secret so the job skips cleanly. Resume from the Render
+dashboard; it then picks up the latest `main` automatically.
